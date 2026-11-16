@@ -6,8 +6,14 @@ from modules import overview,eda,wellness,clustering,prediction,interventions
 
 st.set_page_config(page_title='ADSSU | Wellness Intelligence',page_icon='✦',layout='wide',initial_sidebar_state='expanded')
 setup()
-st.sidebar.markdown('## ◈ ADSSU')
-st.sidebar.caption('OFFICE OF STUDENT AFFAIRS & SERVICES')
+st.sidebar.markdown(
+    '''<div class="sidebar-brand">
+        <div class="brand-kicker">AGUSAN DEL SUR STATE UNIVERSITY</div>
+        <div class="brand-title">Wellness Intelligence</div>
+        <div class="brand-sub">Office of Student Affairs & Services · Research Analytics Workspace</div>
+    </div>''',
+    unsafe_allow_html=True
+)
 st.sidebar.divider()
 upload=st.sidebar.file_uploader(
     'Survey dataset',
@@ -41,6 +47,7 @@ except Exception as e:
 
 pages={'Executive Dashboard':overview,'Data Exploration':eda,'Wellness Profile':wellness,'Behavioral Segments':clustering,'Predictive Analytics':prediction,'Intervention Planning':interventions}
 st.sidebar.markdown('#### ANALYTICS WORKSPACE')
+st.sidebar.caption('Navigate by research and analysis function')
 page=st.sidebar.radio('Navigation',list(pages),label_visibility='collapsed')
 st.sidebar.divider()
 st.sidebar.caption('Screening indicators are not diagnoses. Small groups are suppressed. No individual referrals are automated.')
