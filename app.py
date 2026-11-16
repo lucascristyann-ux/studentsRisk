@@ -59,6 +59,7 @@ if upload is not None:
                     saved=save_dataset(candidate,upload.name)
                 except Exception as e:
                     st.sidebar.warning('Dataset loaded for this session, but private storage could not save it.')
+                    st.sidebar.error(f'Private storage error: {str(e)[:180]}')
                     st.session_state['storage_save_error']=str(e)
                 else:
                     st.session_state['survey_source']='Private storage'
@@ -71,6 +72,7 @@ if 'survey_raw' not in st.session_state:
     st.info('Upload an authorized de-identified ADSSU-CWI CSV from the sidebar to begin.')
     if storage_error:
         st.warning('Private storage is configured but the saved dataset could not be loaded. Upload a valid CSV to continue.')
+        st.caption(f'Storage error: {storage_error[:220]}')
     else:
         st.warning('Use institution-approved access controls before processing sensitive student responses.')
     st.stop()
