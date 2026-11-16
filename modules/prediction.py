@@ -284,7 +284,7 @@ def chapter3_candidate_features(df):
     x['housing_status']=df.iloc[:,43].astype('object')
     return x
 
-@st.cache_data(show_spinner='Running Objective 2 feature screening...',max_entries=3)
+@st.cache_data(show_spinner='Running feature screening...',max_entries=3)
 def chapter3_feature_screen(df):
     r=chapter3_research_scores(df)
     valid=r.Research_scope & r.Risk_tier_final.notna()
