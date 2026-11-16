@@ -1,5 +1,10 @@
+import numpy as np
+import pandas as pd
 import streamlit as st
 import plotly.express as px
+from scipy.stats import shapiro,f_oneway,kruskal
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import scikit_posthocs as sp
 from .theme import polish,TEAL,BLUE
 from .core import chapter3_research_scores,CHAPTER3_TIERS
 
@@ -59,3 +64,106 @@ def render(df,a):
     st.dataframe(summary_table.round(2),use_container_width=True)
     st.caption('This research section uses the OSAS-adapted 12-item MSPSS on a 1–5 scale and the OSAS-adapted 9-item AUDIT. The base tiers are sample-relative CRI quartiles. Chapter 3 escalation rules are then applied: PHQ-9 item 9 > 0 is at least High Risk, and an Immediate Danger = Yes response is Critical Risk. These are research classifications, not clinical diagnoses or automated referral decisions.')
 
+    st.divider()
+    st.markdown('### Chapter 3 · Statistical analysis')
+    st.caption('This section follows the manuscript sequence: Shapiro-Wilk normality checks, then one-way ANOVA or Kruskal-Wallis, followed by Tukey HSD or Dunn-Bonferroni when the omnibus test is significant.')
+
+    if st.button('Run Chapter 3 statistical tests',key='chapter3_stats') or st.session_state.get('chapter3_stats_ready'):
+        st.session_state.chapter3_stats_ready=True
+        try:
+            tests,posthoc=chapter3_statistical_analysis(df)
+        except Exception as e:
+            st.error(f'Chapter 3 statistical analysis could not run: {e}')
+        else:
+            st.dataframe(tests.round(4),hide_index=True,use_container_width=True)
+
+            significant=tests[tests['Significant_p<.05']]
+            st.metric('Significant omnibus comparisons',f'{len(significant):,}')
+
+            if posthoc:
+                st.subheader('Post-hoc comparisons for significant tests')
+                for title,table in posthoc.items():
+                    with st.expander(title):
+                        st.dataframe(table,use_container_width=True)
+            else:
+                st.info('No post-hoc table was required because no omnibus comparison reached p < 0.05.')
+
+
+
+
+# CHAPTER 3 ADDITION: statistical analysis specified in the methodology
+@st.cache_data(show_spinner='Running Chapter 3 statistical analysis...',max_entries=3)
+def chapter3_statistical_analysis(df):
+    r=chapter3_research_scores(df)
+    scope=r.Research_scope.copy()
+
+    data=pd.DataFrame(index=df.index)
+    data['College']=r['College']
+    data['Year level/status']=r['Year level/status']
+    data['Housing status']=df.iloc[:,43].astype('string').fillna('Missing')
+    data['PHQ-9']=r['PHQ9_score']
+    data['WHO-5']=r['WHO5_score']
+    data['MSPSS']=r['MSPSS_mean']
+    data['Food Security']=r['Food_security_score']
+    data['AUDIT-9']=r['AUDIT9_score']
+
+    rows=[]
+    posthoc={}
+
+    for group_col in ['College','Year level/status','Housing status']:
+        for measure in ['PHQ-9','WHO-5','MSPSS','Food Security','AUDIT-9']:
+            sub=data.loc[scope,[group_col,measure]].dropna()
+            groups=[]
+            shapiro_ps=[]
+
+            for name,g in sub.groupby(group_col):
+                vals=g[measure].astype(float).to_numpy()
+                if len(vals)>=3:
+                    groups.append((str(name),vals))
+                    shapiro_ps.append(float(shapiro(vals).pvalue))
+
+            if len(groups)<2:
+                continue
+
+            all_normal=all(p>.05 for p in shapiro_ps)
+            arrays=[vals for _,vals in groups]
+
+            if all_normal:
+                stat,p=f_oneway(*arrays)
+                test_name='One-way ANOVA'
+            else:
+                stat,p=kruskal(*arrays)
+                test_name='Kruskal-Wallis'
+
+            rows.append({
+                'Grouping variable':group_col,
+                'Measure':measure,
+                'Groups tested':len(groups),
+                'Normal in all groups':all_normal,
+                'Minimum Shapiro p':min(shapiro_ps) if shapiro_ps else np.nan,
+                'Test':test_name,
+                'Statistic':float(stat),
+                'p_value':float(p),
+                'Significant_p<.05':bool(p<.05)
+            })
+
+            if p<.05:
+                if all_normal:
+                    tuk=pairwise_tukeyhsd(
+                        endog=sub[measure].astype(float),
+                        groups=sub[group_col].astype(str),
+                        alpha=.05
+                    )
+                    table=pd.DataFrame(
+                        tuk._results_table.data[1:],
+                        columns=tuk._results_table.data[0]
+                    )
+                    posthoc[f'{group_col} · {measure} · Tukey HSD']=table
+                else:
+                    dunn=sp.posthoc_dunn(
+                        sub,val_col=measure,group_col=group_col,
+                        p_adjust='bonferroni'
+                    )
+                    posthoc[f'{group_col} · {measure} · Dunn-Bonferroni']=dunn
+
+    return pd.DataFrame(rows),posthoc
