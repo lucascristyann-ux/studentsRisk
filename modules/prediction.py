@@ -129,6 +129,52 @@ def render(df,a):
         st.dataframe(components.round(3),use_container_width=True)
         st.caption('For Objective 3, feature selection will be repeated inside each training fold to prevent leakage into validation folds, as required by Chapter 3.')
 
+    # CHAPTER 3 ADDITION: Objective 3
+    st.divider()
+    st.markdown('### Research Objective 3 · Four-model validation')
+    st.caption('Decision Tree, Naive Bayes, Random Forest and SVM are evaluated with stratified 10-fold cross-validation. Feature selection and SMOTE are fitted on training data only.')
+
+    if st.button('Run Objective 3 model validation',type='primary',key='chapter3_model_validation') or st.session_state.get('chapter3_model_ready'):
+        st.session_state.chapter3_model_ready=True
+        try:
+            comp,best,report,cm3,mcnemar_table,stability,tuning=chapter3_validate_models(df)
+        except Exception as e:
+            st.error(f'Objective 3 validation could not run: {e}')
+        else:
+            st.success(f'Best research model by macro F1: {best}')
+            st.subheader('10-fold cross-validation model comparison')
+            st.dataframe(comp.round(3),hide_index=True,use_container_width=True)
+
+            c1,c2=st.columns([1.1,1])
+            with c1:
+                st.subheader('Per-tier performance of best model')
+                show_report=report.loc[
+                    [x for x in CHAPTER3_TIERS if x in report.index],
+                    ['precision','recall','f1-score','support']
+                ]
+                st.dataframe(show_report.round(3),use_container_width=True)
+            with c2:
+                st.subheader('Out-of-fold confusion matrix')
+                st.plotly_chart(
+                    polish(px.imshow(
+                        cm3,text_auto=True,color_continuous_scale='Teal',
+                        labels={'x':'Predicted tier','y':'Observed tier'}
+                    )),
+                    use_container_width=True
+                )
+
+            st.subheader('Pairwise McNemar tests')
+            st.dataframe(mcnemar_table.round(4),hide_index=True,use_container_width=True)
+
+            st.subheader('Feature-selection stability across 10 folds')
+            st.dataframe(stability.round(1),hide_index=True,use_container_width=True)
+
+            with st.expander('Fold-by-fold tuning details'):
+                st.dataframe(tuning,hide_index=True,use_container_width=True)
+
+            st.caption('The Decision Tree implementation uses scikit-learn entropy splits. It should not be described as a literal C4.5/J48 implementation in Chapter 4. The research model outputs are aggregate analytical results, not automated clinical referral decisions.')
+
+
 
 
 # CHAPTER 3 ADDITION: Objective 2 feature screening
