@@ -82,13 +82,13 @@ def render(df,a):
     st.caption('The research results load automatically from the uploaded dataset. Detailed statistical tables remain available below each graph.')
 
     # Objective 2: feature selection
-    st.markdown('### Research Objective 2 · Significant survey factors')
+    st.markdown('### Significant survey factors')
     st.caption('Higher information gain means a survey factor carries more information about the final four research risk tiers.')
 
     try:
         selected,components=chapter3_feature_screen(df)
     except Exception as e:
-        st.error(f'Objective 2 feature selection could not run: {e}')
+        st.error(f'Feature selection could not run: {e}')
     else:
         c1,c2,c3=st.columns(3)
         c1.metric('Candidate factors',f'{len(selected):,}')
@@ -114,7 +114,7 @@ def render(df,a):
         fig.update_layout(coloraxis_showscale=False)
         st.plotly_chart(polish(fig,500),use_container_width=True)
 
-        with st.expander('View Objective 2 detailed feature-selection results'):
+        with st.expander('View detailed feature-selection results'):
             show=selected.copy()
             show['Information_Gain']=show['Information_Gain'].round(4)
             show['Chi2_p']=show['Chi2_p'].round(4)
@@ -125,7 +125,7 @@ def render(df,a):
     st.divider()
 
     # Preprocessing diagnostics
-    st.markdown('### Chapter 3 · Preprocessing diagnostics')
+    st.markdown('### Preprocessing diagnostics')
     try:
         vif,outliers,md_threshold,pca_table=chapter3_preprocessing_diagnostics(df)
     except Exception as e:
@@ -158,13 +158,13 @@ def render(df,a):
     st.divider()
 
     # Objective 3: model validation
-    st.markdown('### Research Objective 3 · Four-model validation')
+    st.markdown('### Four-model validation')
     st.caption('Decision Tree, Naive Bayes, Random Forest and SVM are compared using stratified 10-fold cross-validation with training-fold-only feature selection and SMOTE.')
 
     try:
         comp,best,report,cm3,mcnemar_table,stability,tuning=chapter3_validate_models(df)
     except Exception as e:
-        st.error(f'Objective 3 validation could not run: {e}')
+        st.error(f'Model validation could not run: {e}')
     else:
         st.session_state.chapter3_best_model=best
         st.session_state.chapter3_model_comparison=comp.to_dict('records')
@@ -228,7 +228,7 @@ def render(df,a):
             )
             st.plotly_chart(polish(fig,430),use_container_width=True)
 
-        with st.expander('View Objective 3 model tables and statistical comparisons'):
+        with st.expander('View model tables and statistical comparisons'):
             st.dataframe(comp.round(3),hide_index=True,use_container_width=True)
             st.subheader('Per-tier performance of best model')
             st.dataframe(tier_report.round(3),hide_index=True,use_container_width=True)
@@ -488,7 +488,7 @@ def _chapter3_fold_transform(x_train,x_test,y_train):
     return xtr,xte,selected_raw,names
 
 
-@st.cache_data(show_spinner='Running stratified 10-fold Objective 3 validation...',max_entries=2)
+@st.cache_data(show_spinner='Running stratified 10-fold model validation...',max_entries=2)
 def chapter3_validate_models(df):
     r=chapter3_research_scores(df)
     valid=r.Research_scope & r.Risk_tier_final.notna()
@@ -649,7 +649,7 @@ def chapter3_validate_models(df):
 
 
 # CHAPTER 3 ADDITION: preprocessing diagnostics
-@st.cache_data(show_spinner='Running Chapter 3 preprocessing diagnostics...',max_entries=3)
+@st.cache_data(show_spinner='Running preprocessing diagnostics...',max_entries=3)
 def chapter3_preprocessing_diagnostics(df):
     r=chapter3_research_scores(df)
     valid=r.Research_scope & r.Risk_tier_final.notna()
