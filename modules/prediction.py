@@ -6,16 +6,22 @@ px.defaults.template = "plotly_white"
 px.defaults.color_discrete_sequence = ["#0F766E", "#2563EB", "#D97706", "#7C3AED", "#0891B2"]
 from scipy.stats import mannwhitneyu,chi2_contingency
 from statsmodels.stats.multitest import multipletests
-from sklearn.model_selection import train_test_split,StratifiedKFold,cross_validate
+from statsmodels.stats.contingency_tables import mcnemar
+from sklearn.model_selection import train_test_split,StratifiedKFold,cross_validate,GridSearchCV
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler,OneHotEncoder
+from sklearn.preprocessing import StandardScaler,OneHotEncoder,MinMaxScaler
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import roc_auc_score,average_precision_score,balanced_accuracy_score,f1_score,recall_score,confusion_matrix,brier_score_loss,roc_curve
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.svm import SVC
+from sklearn.metrics import roc_auc_score,average_precision_score,balanced_accuracy_score,f1_score,recall_score,confusion_matrix,brier_score_loss,roc_curve,accuracy_score,precision_score,classification_report
 from sklearn.inspection import permutation_importance
 from sklearn.feature_selection import mutual_info_classif
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 from .core import domains,chapter3_research_scores,CHAPTER3_TIERS
 from .theme import polish
 
