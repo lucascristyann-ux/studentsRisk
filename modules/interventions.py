@@ -40,7 +40,7 @@ def render(df,a):
 
     # CHAPTER 3 ADDITION: Objective 4
     st.divider()
-    st.markdown('### Research Objective 4 · Evidence-linked intervention planning')
+    st.markdown('### Evidence-linked intervention planning')
     st.caption('This section loads automatically from the current research findings. Graphs summarize the risk context and the strongest intervention priorities.')
 
     r=chapter3_research_scores(df)
@@ -94,7 +94,7 @@ def render(df,a):
             fig.update_layout(coloraxis_showscale=False)
             st.plotly_chart(polish(fig,420),use_container_width=True)
 
-    with st.expander('View exact Objective 4 recommendations and evidence'):
+    with st.expander('View exact recommendations and evidence'):
         risk_table=risk_counts.rename('Responses').to_frame()
         risk_table['Percent']=100*risk_table.Responses/total
         st.dataframe(risk_table.round(1),use_container_width=True)
@@ -106,7 +106,7 @@ def render(df,a):
 
     best=st.session_state.get('chapter3_best_model')
     if best:
-        st.success(f'Validated model context from Objective 3: {best}')
+        st.success(f'Validated model context: {best}')
     else:
         st.caption('The validated model summary will appear here after Predictive Analytics has loaded in this session.')
 
