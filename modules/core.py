@@ -117,3 +117,87 @@ def chapter3_audit9_score(df):
     drinker=text(df.iloc[:,101]).str.casefold().eq('yes')
     score=scored.sum(axis=1,min_count=9)
     return score.where(drinker)
+
+
+# CHAPTER 3 ADDITION: research-scope composite wellness risk index
+CHAPTER3_TIERS=['Low Risk','Moderate Risk','High Risk','Critical Risk']
+CHAPTER3_COLLEGES={
+    'COLLEGE OF TEACHER EDUCATION',
+    'COLLEGE OF ENGINEERING AND INDUSTRIAL TECHNOLOGY',
+    'COLLEGE OF COMPUTER AND INFORMATION SCIENCES',
+    'COLLEGE OF AGRICULTURE',
+    'COLLEGE OF ARTS AND SCIENCES'
+}
+
+def _chapter3_zscore(s):
+    s=pd.to_numeric(s,errors='coerce')
+    sd=s.std(ddof=0)
+    if pd.isna(sd) or sd==0:
+        return pd.Series(0.0,index=s.index).where(s.notna())
+    return (s-s.mean())/sd
+
+@st.cache_data(show_spinner=False,max_entries=3)
+def chapter3_research_scores(df):
+    """
+    Build the Objective 1 research scores for aggregate analysis.
+    This does not replace OSAS clinical screening or counselor triage.
+    """
+    a=enrich(df).copy()
+
+    consent=df.iloc[:,1].astype('string').str.strip().str.casefold().eq('yes, i consent')
+    college=df['College'].astype('string').str.strip().str.upper().isin(CHAPTER3_COLLEGES)
+    undergraduate=~df['Year level/status'].astype('string').str.strip().str.casefold().eq('graduate student')
+    a['Research_scope']=consent & college & undergraduate
+
+    a['MSPSS_mean']=chapter3_mspss_score(df)
+    a['Food_security_score']=chapter3_food_security_score(df)
+    a['AUDIT9_score']=chapter3_audit9_score(df)
+    a['AUDIT_applicable']=df.iloc[:,101].astype('string').str.strip().str.casefold().eq('yes')
+    a['PHQ9_item9']=first_num(df.iloc[:,131]).where(lambda s:s.ge(0) & s.le(3))
+
+    base=a['Research_scope'] & a[['PHQ9_score','WHO5_score','MSPSS_mean','Food_security_score']].notna().all(axis=1)
+
+    a['z_PHQ9']=np.nan
+    a['z_WHO5']=np.nan
+    a['z_MSPSS']=np.nan
+    a['z_Food']=np.nan
+    a['z_AUDIT9']=np.nan
+
+    a.loc[base,'z_PHQ9']=_chapter3_zscore(a.loc[base,'PHQ9_score'])
+    a.loc[base,'z_WHO5']=_chapter3_zscore(a.loc[base,'WHO5_score'])
+    a.loc[base,'z_MSPSS']=_chapter3_zscore(a.loc[base,'MSPSS_mean'])
+    a.loc[base,'z_Food']=_chapter3_zscore(a.loc[base,'Food_security_score'])
+
+    drinkers=base & a['AUDIT_applicable'] & a['AUDIT9_score'].notna()
+    if drinkers.any():
+        a.loc[drinkers,'z_AUDIT9']=_chapter3_zscore(a.loc[drinkers,'AUDIT9_score'])
+    a.loc[base & ~a['AUDIT_applicable'],'z_AUDIT9']=0.0
+
+    complete=base & a[['z_PHQ9','z_WHO5','z_MSPSS','z_Food','z_AUDIT9']].notna().all(axis=1)
+
+    a['CRI']=np.nan
+    a.loc[complete,'CRI']=(
+        a.loc[complete,'z_PHQ9']
+        +a.loc[complete,'z_AUDIT9']
+        +a.loc[complete,'z_Food']
+        -a.loc[complete,'z_WHO5']
+        -a.loc[complete,'z_MSPSS']
+    )
+
+    a['CRI_no_AUDIT']=np.nan
+    a.loc[base,'CRI_no_AUDIT']=(
+        a.loc[base,'z_PHQ9']
+        +a.loc[base,'z_Food']
+        -a.loc[base,'z_WHO5']
+        -a.loc[base,'z_MSPSS']
+    )
+
+    a['Risk_tier_quartile']=pd.NA
+    valid=a['CRI'].notna()
+    if valid.sum()>=4:
+        ranks=a.loc[valid,'CRI'].rank(method='first')
+        a.loc[valid,'Risk_tier_quartile']=pd.qcut(
+            ranks,4,labels=CHAPTER3_TIERS
+        ).astype(str).values
+
+    return a
