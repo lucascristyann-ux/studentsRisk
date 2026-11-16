@@ -1,20 +1,21 @@
 import hashlib
-import io
+import json
 import re
 from datetime import datetime, timezone
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 import streamlit as st
-from supabase import create_client
 
 
 DATASET_FOLDER = "datasets"
-KEEP_RECENT_FILES = 12
 
 
 def _config():
     try:
         cfg = st.secrets["supabase"]
-        url = str(cfg["url"]).strip()
+        url = str(cfg["url"]).strip().rstrip("/")
         key = str(cfg["secret_key"]).strip()
         bucket = str(cfg.get("bucket", "osas-data")).strip()
     except Exception:
@@ -29,14 +30,6 @@ def is_configured():
     return _config() is not None
 
 
-def _client():
-    cfg = _config()
-    if cfg is None:
-        raise RuntimeError("Private dataset storage is not configured.")
-    url, key, bucket = cfg
-    return create_client(url, key), bucket
-
-
 def _safe_filename(name):
     name = str(name or "survey_dataset.csv").strip()
     name = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
@@ -47,46 +40,68 @@ def _safe_filename(name):
     return (stem or "survey_dataset") + ".csv"
 
 
+def _headers(key, content_type=None):
+    # New sb_secret_* keys are opaque API keys, not JWTs.
+    # Send them on apikey only. Legacy service_role JWTs can also use Bearer.
+    headers = {"apikey": key}
+    if key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {key}"
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
+
+
+def _request(method, endpoint, key, data=None, content_type=None, extra_headers=None):
+    headers = _headers(key, content_type)
+    if extra_headers:
+        headers.update(extra_headers)
+
+    req = Request(endpoint, data=data, headers=headers, method=method)
+    try:
+        with urlopen(req, timeout=30) as response:
+            return response.read(), dict(response.headers)
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body)
+            message = parsed.get("message") or parsed.get("error") or body
+        except Exception:
+            message = body
+        raise RuntimeError(f"Storage request failed ({e.code}): {message}") from None
+    except URLError as e:
+        raise RuntimeError(f"Storage connection failed: {e.reason}") from None
+
+
 def save_dataset(raw_bytes, original_name):
     if not raw_bytes:
         raise ValueError("The uploaded CSV is empty.")
 
-    client, bucket = _client()
+    cfg = _config()
+    if cfg is None:
+        raise RuntimeError("Private dataset storage is not configured.")
+
+    url, key, bucket = cfg
     safe_name = _safe_filename(original_name)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     digest = hashlib.sha256(raw_bytes).hexdigest()[:10]
     object_name = f"{stamp}_{digest}_{safe_name}"
     object_path = f"{DATASET_FOLDER}/{object_name}"
 
-    client.storage.from_(bucket).upload(
-        path=object_path,
-        file=io.BytesIO(raw_bytes),
-        file_options={
-            "content-type": "text/csv",
-            "cache-control": "0",
-            "upsert": "false",
+    endpoint = (
+        f"{url}/storage/v1/object/"
+        f"{quote(bucket, safe='')}/{quote(object_path, safe='/')}"
+    )
+    _request(
+        "POST",
+        endpoint,
+        key,
+        data=raw_bytes,
+        content_type="text/csv",
+        extra_headers={
+            "x-upsert": "false",
+            "Cache-Control": "no-store",
         },
     )
-
-    # Keep a small history of recent uploads and remove older versions.
-    try:
-        files = client.storage.from_(bucket).list(
-            DATASET_FOLDER,
-            {
-                "limit": 100,
-                "offset": 0,
-                "sortBy": {"column": "name", "order": "desc"},
-            },
-        )
-        real_files = [item for item in files if item.get("id") and item.get("name")]
-        old = real_files[KEEP_RECENT_FILES:]
-        if old:
-            client.storage.from_(bucket).remove(
-                [f"{DATASET_FOLDER}/{item['name']}" for item in old]
-            )
-    except Exception:
-        # Cleanup failure must never invalidate a successful upload.
-        pass
 
     return {
         "object_path": object_path,
@@ -96,33 +111,70 @@ def save_dataset(raw_bytes, original_name):
     }
 
 
-def load_latest_dataset():
-    client, bucket = _client()
-    files = client.storage.from_(bucket).list(
-        DATASET_FOLDER,
-        {
-            "limit": 1,
-            "offset": 0,
-            "sortBy": {"column": "name", "order": "desc"},
-        },
+def _list_latest():
+    cfg = _config()
+    if cfg is None:
+        raise RuntimeError("Private dataset storage is not configured.")
+
+    url, key, bucket = cfg
+    endpoint = f"{url}/storage/v1/object/list/{quote(bucket, safe='')}"
+    payload = json.dumps({
+        "prefix": DATASET_FOLDER,
+        "limit": 100,
+        "offset": 0,
+        "sortBy": {"column": "name", "order": "desc"},
+    }).encode("utf-8")
+
+    body, _ = _request(
+        "POST",
+        endpoint,
+        key,
+        data=payload,
+        content_type="application/json",
+        extra_headers={"Cache-Control": "no-store"},
     )
-    files = [item for item in files if item.get("id") and item.get("name")]
+    items = json.loads(body.decode("utf-8"))
+    files = [
+        item for item in items
+        if isinstance(item, dict) and item.get("id") and item.get("name")
+    ]
     if not files:
         return None
+    return files[0]
 
-    item = files[0]
+
+def load_latest_dataset():
+    cfg = _config()
+    if cfg is None:
+        raise RuntimeError("Private dataset storage is not configured.")
+
+    url, key, bucket = cfg
+    item = _list_latest()
+    if not item:
+        return None
+
     object_name = item["name"]
     object_path = f"{DATASET_FOLDER}/{object_name}"
-    raw = client.storage.from_(bucket).download(object_path)
+    endpoint = (
+        f"{url}/storage/v1/object/authenticated/"
+        f"{quote(bucket, safe='')}/{quote(object_path, safe='/')}"
+    )
+    raw, _ = _request(
+        "GET",
+        endpoint,
+        key,
+        extra_headers={"Cache-Control": "no-store"},
+    )
+
     if not raw:
         return None
 
-    # Object names are: timestamp_hash_originalfilename.csv
+    # Object names are timestamp_hash_originalfilename.csv.
     parts = object_name.split("_", 2)
     display_name = parts[2] if len(parts) == 3 else object_name
 
     return {
-        "raw": bytes(raw),
+        "raw": raw,
         "filename": display_name,
         "object_path": object_path,
         "updated_at": item.get("updated_at") or item.get("created_at"),
