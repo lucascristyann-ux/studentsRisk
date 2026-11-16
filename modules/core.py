@@ -200,4 +200,23 @@ def chapter3_research_scores(df):
             ranks,4,labels=CHAPTER3_TIERS
         ).astype(str).values
 
+    # Chapter 3 escalation rules are applied after the CRI quartile assignment.
+    # The current research export contains the immediate-danger response itself,
+    # not a separate OSAS RED/YELLOW/ORANGE/GREEN output column.
+    a['Immediate_danger']=df.iloc[:,3].astype('string').str.strip()
+    final=a['Risk_tier_quartile'].astype('object').copy()
+
+    phq9_override=valid & a['PHQ9_item9'].gt(0)
+    raise_to_high=phq9_override & final.isin(['Low Risk','Moderate Risk'])
+    final.loc[raise_to_high]='High Risk'
+
+    immediate_override=valid & a['Immediate_danger'].str.casefold().eq('yes')
+    final.loc[immediate_override]='Critical Risk'
+
+    a['PHQ9_item9_override']=phq9_override
+    a['Immediate_danger_override']=immediate_override
+    a['Risk_tier_final']=pd.Categorical(
+        final,categories=CHAPTER3_TIERS,ordered=True
+    )
+
     return a
