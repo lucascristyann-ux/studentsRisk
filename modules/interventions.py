@@ -80,7 +80,7 @@ def render(df,a):
     recs=chapter3_intervention_recommendations(df)
     with c2:
         if recs.empty:
-            st.info('No predictors passed the current Objective 2 selection rules.')
+            st.info('No predictors passed the current selection rules.')
         else:
             plot_recs=recs.sort_values('Information_Gain',ascending=True)
             fig=px.bar(
