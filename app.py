@@ -30,7 +30,7 @@ if upload is None:
 fingerprint=hashlib.sha256(raw).hexdigest()
 if st.session_state.get('dataset_fingerprint')!=fingerprint:
     st.session_state.dataset_fingerprint=fingerprint
-    for k in ['cluster_ready','sig_ready','train_ready','chapter3_feature_ready','chapter3_model_ready','chapter3_intervention_ready','chapter3_best_model','chapter3_model_comparison']:
+    for k in ['cluster_ready','sig_ready','train_ready','chapter3_feature_ready','chapter3_model_ready','chapter3_intervention_ready','chapter3_best_model','chapter3_model_comparison','chapter3_kmeans_ready','chapter3_stats_ready','chapter3_preprocess_ready']:
         st.session_state.pop(k,None)
 try:
     df=load_data(raw)
