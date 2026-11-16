@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -40,42 +41,77 @@ def render(df,a):
     # CHAPTER 3 ADDITION: Objective 4
     st.divider()
     st.markdown('### Research Objective 4 · Evidence-linked intervention planning')
-    st.caption('Recommendations below are generated from aggregate research findings. They support OSAS program planning and do not replace counselor judgment or individual clinical assessment.')
+    st.caption('This section loads automatically from the current research findings. Graphs summarize the risk context and the strongest intervention priorities.')
 
-    if st.button('Generate Objective 4 recommendations',key='chapter3_interventions') or st.session_state.get('chapter3_intervention_ready'):
-        st.session_state.chapter3_intervention_ready=True
+    r=chapter3_research_scores(df)
+    research=r[r.Research_scope & r.Risk_tier_final.notna()].copy()
+    risk_counts=research.Risk_tier_final.value_counts().reindex(CHAPTER3_TIERS,fill_value=0)
+    total=max(int(risk_counts.sum()),1)
+    high_critical=int(risk_counts.get('High Risk',0)+risk_counts.get('Critical Risk',0))
+    hc_percent=100*high_critical/total
 
-        r=chapter3_research_scores(df)
-        research=r[r.Research_scope & r.Risk_tier_final.notna()].copy()
-        counts=research.Risk_tier_final.value_counts().reindex(CHAPTER3_TIERS,fill_value=0)
-        total=max(int(counts.sum()),1)
-        high_critical=int(counts.get('High Risk',0)+counts.get('Critical Risk',0))
-        hc_percent=100*high_critical/total
+    c1,c2,c3=st.columns(3)
+    c1.metric('Research risk records',f'{total:,}')
+    c2.metric('High + Critical tiers',f'{high_critical:,}')
+    c3.metric('High + Critical share',f'{hc_percent:.1f}%')
 
-        c1,c2,c3=st.columns(3)
-        c1.metric('Research risk records',f'{total:,}')
-        c2.metric('High + Critical tiers',f'{high_critical:,}')
-        c3.metric('High + Critical share',f'{hc_percent:.1f}%')
+    risk_plot=risk_counts.rename('Responses').reset_index().rename(columns={'Risk_tier_final':'Risk tier','index':'Risk tier'})
+    if 'Risk tier' not in risk_plot.columns:
+        risk_plot.columns=['Risk tier','Responses']
 
-        st.subheader('Risk-tier context')
-        risk_table=counts.rename('Responses').to_frame()
-        risk_table['Percent']=100*risk_table.Responses/total
-        st.dataframe(risk_table.round(1),use_container_width=True)
+    risk_colors={
+        'Low Risk':'#91A66B',
+        'Moderate Risk':'#D8B56A',
+        'High Risk':'#D9915B',
+        'Critical Risk':'#C97167'
+    }
 
-        recs=chapter3_intervention_recommendations(df)
-        st.subheader('Interventions linked to Objective 2 predictors')
+    c1,c2=st.columns([1,1])
+    with c1:
+        fig=px.bar(
+            risk_plot,x='Risk tier',y='Responses',color='Risk tier',text='Responses',
+            title='Research risk context for intervention planning',
+            category_orders={'Risk tier':CHAPTER3_TIERS},
+            color_discrete_map=risk_colors
+        )
+        fig.update_traces(textposition='outside',cliponaxis=False)
+        st.plotly_chart(polish(fig,420),use_container_width=True)
+
+    recs=chapter3_intervention_recommendations(df)
+    with c2:
         if recs.empty:
             st.info('No predictors passed the current Objective 2 selection rules.')
         else:
-            st.dataframe(recs,hide_index=True,use_container_width=True)
+            plot_recs=recs.sort_values('Information_Gain',ascending=True)
+            fig=px.bar(
+                plot_recs,x='Information_Gain',y='Predictor',orientation='h',
+                color='Information_Gain',
+                color_continuous_scale=['#E8DFD5','#D7AE78','#91A66B'],
+                text='Information_Gain',
+                title='Evidence-linked intervention priorities'
+            )
+            fig.update_traces(texttemplate='%{text:.3f}',textposition='outside',cliponaxis=False)
+            fig.update_layout(coloraxis_showscale=False)
+            st.plotly_chart(polish(fig,420),use_container_width=True)
 
-        best=st.session_state.get('chapter3_best_model')
-        if best:
-            st.success(f'Objective 3 validated-model context available in this session: {best}')
-        else:
-            st.info('Run Objective 3 model validation under Predictive Analytics to display the best validated model here.')
+    with st.expander('View exact Objective 4 recommendations and evidence'):
+        risk_table=risk_counts.rename('Responses').to_frame()
+        risk_table['Percent']=100*risk_table.Responses/total
+        st.dataframe(risk_table.round(1),use_container_width=True)
+        if not recs.empty:
+            st.dataframe(
+                recs[['Predictor','Evidence','Program pathway','Recommended action']],
+                hide_index=True,use_container_width=True
+            )
 
-        st.caption('Use these results as Chapter 4 evidence for proposed intervention strategies. Program recommendations should still be reviewed with OSAS and matched to existing referral and counselor-response procedures.')
+    best=st.session_state.get('chapter3_best_model')
+    if best:
+        st.success(f'Validated model context from Objective 3: {best}')
+    else:
+        st.caption('The validated model summary will appear here after Predictive Analytics has loaded in this session.')
+
+    st.caption('Recommendations support aggregate OSAS program planning and do not replace counselor judgment, diagnosis, or individual clinical assessment.')
+
 
 
 
@@ -86,7 +122,7 @@ def chapter3_intervention_recommendations(df):
     selected,_=chapter3_feature_screen(df)
     selected=selected[selected.Selected_for_model].copy()
     if selected.empty:
-        return pd.DataFrame(columns=['Predictor','Evidence','Program pathway','Recommended action'])
+        return pd.DataFrame(columns=['Predictor','Information_Gain','Chi2_p','Evidence','Program pathway','Recommended action'])
 
     mapping={
         'academic':('Academic coaching','Study skills support, adviser consultation, tutoring, and workload-management sessions'),
@@ -116,6 +152,8 @@ def chapter3_intervention_recommendations(df):
             evidence+=f"; Chi-square p={row['Chi2_p']:.4f}"
         rows.append({
             'Predictor':feature,
+            'Information_Gain':float(row['Information_Gain']),
+            'Chi2_p':float(row['Chi2_p']) if pd.notna(row['Chi2_p']) else np.nan,
             'Evidence':evidence,
             'Program pathway':program,
             'Recommended action':action
