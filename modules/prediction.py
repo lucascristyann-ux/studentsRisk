@@ -78,107 +78,193 @@ def train(x,y):
     return comparison,selected,metrics,importance,pd.DataFrame({'FPR':fpr,'TPR':tpr}),confusion_matrix(yv,pred)
 
 def render(df,a):
-    st.markdown('### Predictive modeling and evidence')
-    valid=a.low_wellbeing.notna()
-    x=features(df).loc[valid];y=a.loc[valid,'low_wellbeing'].astype(int)
-    st.subheader('Exploratory statistical significance')
-    if st.button('Run significance tests',key='sig') or st.session_state.get('sig_ready'):
-        st.session_state.sig_ready=True
-        result=significance(x,y)
-        st.dataframe(result.round(4),hide_index=True,use_container_width=True)
-    st.subheader('Classification and 5-fold cross-validation')
-    if st.button('Train and evaluate models',type='primary',key='train') or st.session_state.get('train_ready'):
-        st.session_state.train_ready=True
-        comp,name,metrics,imp,roc,cm=train(x,y)
-        st.success(f'Selected by training CV ROC-AUC: {name}')
-        st.dataframe(comp.round(3),hide_index=True,use_container_width=True)
-        st.dataframe(pd.DataFrame([metrics]).round(3),hide_index=True,use_container_width=True)
-        st.plotly_chart(polish(px.line(roc,x='FPR',y='TPR',title='Held-out ROC curve')),use_container_width=True)
-        st.plotly_chart(polish(px.imshow(cm,text_auto=True,color_continuous_scale='Teal',labels={'x':'Predicted','y':'Observed'},title='Held-out confusion matrix')),use_container_width=True)
-        st.plotly_chart(polish(px.bar(imp.head(12).sort_values('Mean AUC drop'),x='Mean AUC drop',y='Feature',orientation='h',title='Predictor importance on held-out data'),520),use_container_width=True)
-    st.warning('Prediction is of WHO-5 screening status, not a diagnosis. Threshold 0.5 is not a validated clinical action cutoff; never automate individual referrals.')
+    st.markdown('### Research prediction results')
+    st.caption('The research results load automatically from the uploaded dataset. Detailed statistical tables remain available below each graph.')
 
-    # CHAPTER 3 ADDITION: Objective 2
-    st.divider()
+    # Objective 2: feature selection
     st.markdown('### Research Objective 2 · Significant survey factors')
-    st.caption('This section screens non-CRI survey predictors against the four research risk tiers. CRI component scores are shown separately because using them as predictors would leak the target definition into the model.')
+    st.caption('Higher information gain means a survey factor carries more information about the final four research risk tiers.')
 
-    if st.button('Run Objective 2 feature selection',key='chapter3_feature_selection') or st.session_state.get('chapter3_feature_ready'):
-        st.session_state.chapter3_feature_ready=True
+    try:
         selected,components=chapter3_feature_screen(df)
-
+    except Exception as e:
+        st.error(f'Objective 2 feature selection could not run: {e}')
+    else:
         c1,c2,c3=st.columns(3)
         c1.metric('Candidate factors',f'{len(selected):,}')
         c2.metric('Selected factors',f'{int(selected.Selected_for_model.sum()):,}')
         c3.metric('Significant categorical factors',f'{int(selected.Significant_Chi2.sum()):,}')
 
-        st.subheader('Feature-selection results')
-        show=selected.copy()
-        show['Information_Gain']=show['Information_Gain'].round(4)
-        show['Chi2_p']=show['Chi2_p'].round(4)
-        st.dataframe(show,hide_index=True,use_container_width=True)
+        ranked=selected[selected.Selected_for_model].copy()
+        if ranked.empty:
+            ranked=selected.head(10).copy()
+        ranked=ranked.sort_values('Information_Gain',ascending=True).tail(12)
 
-        ranked=selected.sort_values('Information_Gain',ascending=False).head(12).sort_values('Information_Gain')
-        st.plotly_chart(
-            polish(px.bar(
-                ranked,x='Information_Gain',y='Feature',orientation='h',
-                title='Top survey factors by information gain'
-            ),520),
-            use_container_width=True
+        fig=px.bar(
+            ranked,
+            x='Information_Gain',
+            y='Feature',
+            orientation='h',
+            color='Information_Gain',
+            color_continuous_scale=['#EDE4D9','#D7AE78','#91A66B'],
+            title='Selected survey predictors by information gain',
+            text='Information_Gain'
         )
+        fig.update_traces(texttemplate='%{text:.3f}',textposition='outside',cliponaxis=False)
+        fig.update_layout(coloraxis_showscale=False)
+        st.plotly_chart(polish(fig,500),use_container_width=True)
 
-        st.subheader('CRI component associations · descriptive only')
-        st.dataframe(components.round(3),use_container_width=True)
-        st.caption('For Objective 3, feature selection will be repeated inside each training fold to prevent leakage into validation folds, as required by Chapter 3.')
+        with st.expander('View Objective 2 detailed feature-selection results'):
+            show=selected.copy()
+            show['Information_Gain']=show['Information_Gain'].round(4)
+            show['Chi2_p']=show['Chi2_p'].round(4)
+            st.dataframe(show,hide_index=True,use_container_width=True)
+            st.subheader('CRI component associations · descriptive only')
+            st.dataframe(components.round(3),use_container_width=True)
 
-    # CHAPTER 3 ADDITION: Objective 3
     st.divider()
+
+    # Preprocessing diagnostics
+    st.markdown('### Chapter 3 · Preprocessing diagnostics')
+    try:
+        vif,outliers,md_threshold,pca_table=chapter3_preprocessing_diagnostics(df)
+    except Exception as e:
+        st.error(f'Preprocessing diagnostics could not run: {e}')
+    else:
+        c1,c2=st.columns(2)
+        c1.metric('Predictors with VIF > 10',f'{int(vif.VIF_above_10.sum()):,}')
+        c2.metric('Mahalanobis outlier flags',f'{int(outliers.Flag_above_99pct_chi2.sum()):,}')
+
+        vif_plot=vif.sort_values('VIF',ascending=True)
+        fig=px.bar(
+            vif_plot,x='VIF',y='Feature',orientation='h',
+            color='VIF',
+            color_continuous_scale=['#DCE6C8','#D9A36D','#C97167'],
+            title='Multicollinearity diagnostic · Variance Inflation Factor',
+            text='VIF'
+        )
+        fig.add_vline(x=10,line_dash='dash',line_color='#C97167',annotation_text='VIF = 10')
+        fig.update_traces(texttemplate='%{text:.2f}',textposition='outside',cliponaxis=False)
+        fig.update_layout(coloraxis_showscale=False)
+        st.plotly_chart(polish(fig,440),use_container_width=True)
+
+        with st.expander('View preprocessing diagnostic tables'):
+            st.dataframe(vif.round(3),hide_index=True,use_container_width=True)
+            st.caption(f'Mahalanobis review threshold: {md_threshold:.3f}')
+            st.dataframe(outliers.head(50).round(3),hide_index=True,use_container_width=True)
+            if not pca_table.empty:
+                st.dataframe(pca_table.round(2),hide_index=True,use_container_width=True)
+
+    st.divider()
+
+    # Objective 3: model validation
     st.markdown('### Research Objective 3 · Four-model validation')
-    st.caption('Decision Tree, Naive Bayes, Random Forest and SVM are evaluated with stratified 10-fold cross-validation. Feature selection and SMOTE are fitted on training data only.')
+    st.caption('Decision Tree, Naive Bayes, Random Forest and SVM are compared using stratified 10-fold cross-validation with training-fold-only feature selection and SMOTE.')
 
-    if st.button('Run Objective 3 model validation',type='primary',key='chapter3_model_validation') or st.session_state.get('chapter3_model_ready'):
-        st.session_state.chapter3_model_ready=True
-        try:
-            comp,best,report,cm3,mcnemar_table,stability,tuning=chapter3_validate_models(df)
-        except Exception as e:
-            st.error(f'Objective 3 validation could not run: {e}')
-        else:
-            st.session_state.chapter3_best_model=best
-            st.session_state.chapter3_model_comparison=comp.to_dict('records')
-            st.success(f'Best research model by macro F1: {best}')
-            st.subheader('10-fold cross-validation model comparison')
+    try:
+        comp,best,report,cm3,mcnemar_table,stability,tuning=chapter3_validate_models(df)
+    except Exception as e:
+        st.error(f'Objective 3 validation could not run: {e}')
+    else:
+        st.session_state.chapter3_best_model=best
+        st.session_state.chapter3_model_comparison=comp.to_dict('records')
+
+        best_row=comp.loc[comp.Model.eq(best)].iloc[0]
+        c1,c2,c3=st.columns(3)
+        c1.metric('Best model',best)
+        c2.metric('Best macro F1',f"{best_row['F1_macro']:.3f}")
+        c3.metric('Best macro AUC',f"{best_row['AUC_OVR_macro']:.3f}")
+
+        long=comp.melt(
+            id_vars='Model',
+            value_vars=['Accuracy','F1_macro','AUC_OVR_macro'],
+            var_name='Metric',value_name='Score'
+        )
+        labels={'F1_macro':'Macro F1','AUC_OVR_macro':'Macro AUC','Accuracy':'Accuracy'}
+        long['Metric']=long['Metric'].map(labels)
+
+        fig=px.bar(
+            long,x='Model',y='Score',color='Metric',barmode='group',
+            title='10-fold classification model comparison',
+            category_orders={'Model':comp.Model.tolist()},
+            color_discrete_map={
+                'Accuracy':'#91A66B',
+                'Macro F1':'#D9915B',
+                'Macro AUC':'#8F83B8'
+            }
+        )
+        fig.update_yaxes(range=[0,1])
+        st.plotly_chart(polish(fig,470),use_container_width=True)
+
+        c1,c2=st.columns([1.05,1])
+        with c1:
+            tier_report=report.loc[
+                [x for x in CHAPTER3_TIERS if x in report.index],
+                ['precision','recall','f1-score','support']
+            ].reset_index().rename(columns={'index':'Risk tier'})
+            fig=px.bar(
+                tier_report,x='Risk tier',y='recall',
+                color='Risk tier',text='recall',
+                title=f'{best} recall by research risk tier',
+                category_orders={'Risk tier':CHAPTER3_TIERS},
+                color_discrete_map={
+                    'Low Risk':'#91A66B',
+                    'Moderate Risk':'#D8B56A',
+                    'High Risk':'#D9915B',
+                    'Critical Risk':'#C97167'
+                }
+            )
+            fig.update_traces(texttemplate='%{text:.2f}',textposition='outside',cliponaxis=False)
+            fig.update_yaxes(range=[0,1])
+            st.plotly_chart(polish(fig,430),use_container_width=True)
+
+        with c2:
+            fig=px.imshow(
+                cm3,
+                text_auto=True,
+                color_continuous_scale=['#F7F1EA','#DFA06F','#8F6C56'],
+                labels={'x':'Predicted tier','y':'Observed tier','color':'Count'},
+                title=f'{best} out-of-fold confusion matrix'
+            )
+            st.plotly_chart(polish(fig,430),use_container_width=True)
+
+        with st.expander('View Objective 3 model tables and statistical comparisons'):
             st.dataframe(comp.round(3),hide_index=True,use_container_width=True)
-
-            c1,c2=st.columns([1.1,1])
-            with c1:
-                st.subheader('Per-tier performance of best model')
-                show_report=report.loc[
-                    [x for x in CHAPTER3_TIERS if x in report.index],
-                    ['precision','recall','f1-score','support']
-                ]
-                st.dataframe(show_report.round(3),use_container_width=True)
-            with c2:
-                st.subheader('Out-of-fold confusion matrix')
-                st.plotly_chart(
-                    polish(px.imshow(
-                        cm3,text_auto=True,color_continuous_scale='Teal',
-                        labels={'x':'Predicted tier','y':'Observed tier'}
-                    )),
-                    use_container_width=True
-                )
-
+            st.subheader('Per-tier performance of best model')
+            st.dataframe(tier_report.round(3),hide_index=True,use_container_width=True)
             st.subheader('Pairwise McNemar tests')
             st.dataframe(mcnemar_table.round(4),hide_index=True,use_container_width=True)
-
             st.subheader('Feature-selection stability across 10 folds')
             st.dataframe(stability.round(1),hide_index=True,use_container_width=True)
+            st.subheader('Fold-by-fold tuning details')
+            st.dataframe(tuning,hide_index=True,use_container_width=True)
 
-            with st.expander('Fold-by-fold tuning details'):
-                st.dataframe(tuning,hide_index=True,use_container_width=True)
+        st.caption('These are aggregate research-validation results, not automated clinical referral decisions.')
 
-            st.caption('The Decision Tree implementation uses scikit-learn entropy splits. It should not be described as a literal C4.5/J48 implementation in Chapter 4. The research model outputs are aggregate analytical results, not automated clinical referral decisions.')
+    st.divider()
 
+    # Preserve the adviser's original WHO-5 exploratory analysis as supplementary.
+    with st.expander('Supplementary exploratory WHO-5 analysis from the original dashboard'):
+        valid=a.low_wellbeing.notna()
+        x=features(df).loc[valid]
+        y=a.loc[valid,'low_wellbeing'].astype(int)
 
+        st.subheader('Exploratory statistical significance')
+        result=significance(x,y)
+        st.dataframe(result.round(4),hide_index=True,use_container_width=True)
+
+        st.subheader('Original binary WHO-5 model comparison')
+        comp_old,name,metrics,imp,roc,cm=train(x,y)
+        st.caption(f'Original exploratory model selected by training CV ROC-AUC: {name}')
+        st.dataframe(comp_old.round(3),hide_index=True,use_container_width=True)
+        st.plotly_chart(polish(px.line(roc,x='FPR',y='TPR',title='Exploratory held-out ROC curve')),use_container_width=True)
+        st.plotly_chart(polish(px.bar(
+            imp.head(12).sort_values('Mean AUC drop'),
+            x='Mean AUC drop',y='Feature',orientation='h',
+            title='Exploratory predictor importance'
+        ),500),use_container_width=True)
+
+    st.warning('Research classifications and model outputs are not diagnoses and must not automate individual referrals.')
 
 
 # CHAPTER 3 ADDITION: Objective 2 feature screening
