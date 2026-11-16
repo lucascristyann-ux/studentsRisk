@@ -249,3 +249,255 @@ def chapter3_feature_screen(df):
     component_table=component_table.sort_values('Absolute_association',ascending=False)
 
     return result,component_table
+
+
+# CHAPTER 3 ADDITION: Objective 3 four-model validation
+def _chapter3_fold_transform(x_train,x_test,y_train):
+    """
+    Fit correlation, chi-square, information-gain selection, imputation,
+    encoding and Min-Max scaling using the training fold only.
+    """
+    numeric=x_train.select_dtypes(include='number').columns.tolist()
+    categorical=[c for c in x_train.columns if c not in numeric]
+    y_code=y_train.map({name:i for i,name in enumerate(CHAPTER3_TIERS)}).astype(int)
+
+    # Numeric redundancy filter, using training-fold information gain to decide
+    # which member of a highly correlated pair is retained.
+    num_mi={}
+    if numeric:
+        nx=x_train[numeric].apply(pd.to_numeric,errors='coerce')
+        nx=nx.fillna(nx.median())
+        for col in numeric:
+            if nx[col].nunique()<2:
+                num_mi[col]=0.0
+            else:
+                num_mi[col]=float(mutual_info_classif(
+                    nx[[col]],y_code,discrete_features=False,random_state=42
+                )[0])
+        corr=nx.corr(method='pearson').abs()
+        dropped=set()
+        for i,left in enumerate(numeric):
+            if left in dropped:
+                continue
+            for right in numeric[i+1:]:
+                if right in dropped:
+                    continue
+                if corr.loc[left,right]>.85:
+                    if num_mi.get(left,0)>=num_mi.get(right,0):
+                        dropped.add(right)
+                    else:
+                        dropped.add(left)
+                        break
+        numeric=[c for c in numeric if c not in dropped]
+
+    # Chi-square selection for categorical predictors using training data only.
+    selected_cat=[]
+    for col in categorical:
+        s=x_train[col].fillna('Missing').astype(str)
+        tab=pd.crosstab(s,y_train)
+        if min(tab.shape)<2:
+            continue
+        _,p,_,_=chi2_contingency(tab)
+        if p<.05:
+            selected_cat.append(col)
+
+    # Keep numeric predictors after correlation filtering. If no categorical
+    # variable passes chi-square, the model still has the numeric candidates.
+    selected_raw=numeric+selected_cat
+    if not selected_raw:
+        selected_raw=x_train.columns.tolist()[:1]
+
+    transformers=[]
+    selected_num=[c for c in selected_raw if c in numeric]
+    selected_cat=[c for c in selected_raw if c not in selected_num]
+    if selected_num:
+        transformers.append((
+            'num',
+            Pipeline([
+                ('impute',SimpleImputer(strategy='median')),
+                ('scale',MinMaxScaler())
+            ]),
+            selected_num
+        ))
+    if selected_cat:
+        transformers.append((
+            'cat',
+            Pipeline([
+                ('impute',SimpleImputer(strategy='most_frequent')),
+                ('encode',OneHotEncoder(handle_unknown='ignore',sparse_output=False))
+            ]),
+            selected_cat
+        ))
+
+    prep=ColumnTransformer(transformers,remainder='drop')
+    xtr=prep.fit_transform(x_train[selected_raw])
+    xte=prep.transform(x_test[selected_raw])
+    names=np.asarray(prep.get_feature_names_out(),dtype=object)
+
+    # Information-gain filtering is also fitted only on the training fold.
+    if xtr.shape[1]>1:
+        discrete=np.array([str(n).startswith('cat__') for n in names])
+        mi=mutual_info_classif(
+            xtr,y_code,discrete_features=discrete,random_state=42
+        )
+        keep=mi>0
+        if keep.sum()<min(5,len(mi)):
+            order=np.argsort(mi)[::-1]
+            keep=np.zeros(len(mi),dtype=bool)
+            keep[order[:min(5,len(mi))]]=True
+        xtr=xtr[:,keep]
+        xte=xte[:,keep]
+        names=names[keep]
+
+    return xtr,xte,selected_raw,names
+
+
+@st.cache_data(show_spinner='Running stratified 10-fold Objective 3 validation...',max_entries=2)
+def chapter3_validate_models(df):
+    r=chapter3_research_scores(df)
+    valid=r.Research_scope & r.Risk_tier_quartile.notna()
+    x=chapter3_candidate_features(df).loc[valid].reset_index(drop=True)
+    y=r.loc[valid,'Risk_tier_quartile'].astype(str).reset_index(drop=True)
+
+    if len(y)<40 or y.value_counts().min()<10:
+        raise ValueError('Not enough valid cases in every risk tier for stratified 10-fold validation.')
+
+    outer=StratifiedKFold(n_splits=10,shuffle=True,random_state=42)
+    model_specs={
+        'Decision Tree (entropy)':(
+            DecisionTreeClassifier(criterion='entropy',random_state=42),
+            {'model__max_depth':[4,8,None]}
+        ),
+        'Naive Bayes':(
+            GaussianNB(),
+            {'model__var_smoothing':[1e-9,1e-8]}
+        ),
+        'Random Forest':(
+            RandomForestClassifier(random_state=42,n_jobs=1),
+            {'model__n_estimators':[100,500],'model__max_features':['sqrt','log2']}
+        ),
+        'SVM':(
+            SVC(probability=True,random_state=42),
+            [
+                {'model__kernel':['linear'],'model__C':[1,2]},
+                {'model__kernel':['rbf'],'model__C':[1,2],'model__gamma':['scale']},
+                {'model__kernel':['poly'],'model__C':[1],'model__degree':[3]}
+            ]
+        )
+    }
+
+    predictions={name:np.empty(len(y),dtype=object) for name in model_specs}
+    probabilities={name:np.zeros((len(y),len(CHAPTER3_TIERS)),dtype=float) for name in model_specs}
+    feature_counts={}
+    tuning_rows=[]
+
+    for fold,(train_idx,test_idx) in enumerate(outer.split(x,y),start=1):
+        xtr_raw=x.iloc[train_idx].copy()
+        xte_raw=x.iloc[test_idx].copy()
+        ytr=y.iloc[train_idx].copy()
+        yte=y.iloc[test_idx].copy()
+
+        xtr,xte,selected_raw,selected_names=_chapter3_fold_transform(
+            xtr_raw,xte_raw,ytr
+        )
+        for feature in selected_raw:
+            feature_counts[feature]=feature_counts.get(feature,0)+1
+
+        min_class=int(ytr.value_counts().min())
+        smote_k=max(1,min(5,min_class-1))
+        inner=StratifiedKFold(n_splits=3,shuffle=True,random_state=fold)
+
+        for name,(model,param_grid) in model_specs.items():
+            pipe=ImbPipeline([
+                ('smote',SMOTE(random_state=42+fold,k_neighbors=smote_k)),
+                ('model',model)
+            ])
+            search=GridSearchCV(
+                pipe,param_grid=param_grid,scoring='f1_macro',
+                cv=inner,n_jobs=1,refit=True
+            )
+            search.fit(xtr,ytr)
+            pred=search.predict(xte)
+            raw_prob=search.predict_proba(xte)
+
+            predictions[name][test_idx]=pred
+            aligned=np.zeros((len(test_idx),len(CHAPTER3_TIERS)),dtype=float)
+            model_classes=list(search.best_estimator_.named_steps['model'].classes_)
+            for source_i,cls in enumerate(model_classes):
+                aligned[:,CHAPTER3_TIERS.index(cls)]=raw_prob[:,source_i]
+            probabilities[name][test_idx,:]=aligned
+
+            tuning_rows.append({
+                'Fold':fold,
+                'Model':name,
+                'Best parameters':str(search.best_params_),
+                'Selected raw factors':len(selected_raw),
+                'Selected encoded features':len(selected_names)
+            })
+
+    y_int=y.map({name:i for i,name in enumerate(CHAPTER3_TIERS)}).astype(int)
+    metric_rows=[]
+    reports={}
+    cms={}
+    for name in model_specs:
+        pred=pd.Series(predictions[name])
+        prob=probabilities[name]
+        auc=roc_auc_score(
+            y_int,prob,multi_class='ovr',average='macro',
+            labels=list(range(len(CHAPTER3_TIERS)))
+        )
+        metric_rows.append({
+            'Model':name,
+            'Accuracy':accuracy_score(y,pred),
+            'Precision_macro':precision_score(y,pred,average='macro',zero_division=0),
+            'Recall_macro':recall_score(y,pred,average='macro',zero_division=0),
+            'F1_macro':f1_score(y,pred,average='macro',zero_division=0),
+            'AUC_OVR_macro':auc
+        })
+        rep=classification_report(
+            y,pred,labels=CHAPTER3_TIERS,
+            output_dict=True,zero_division=0
+        )
+        reports[name]=pd.DataFrame(rep).T
+        cms[name]=pd.DataFrame(
+            confusion_matrix(y,pred,labels=CHAPTER3_TIERS),
+            index=CHAPTER3_TIERS,columns=CHAPTER3_TIERS
+        )
+
+    comparison=pd.DataFrame(metric_rows).sort_values(
+        ['F1_macro','AUC_OVR_macro'],ascending=False
+    ).reset_index(drop=True)
+    best_name=comparison.iloc[0].Model
+
+    # Pairwise McNemar tests compare whether model correctness differs.
+    pair_rows=[]
+    model_names=list(model_specs)
+    for i,left in enumerate(model_names):
+        for right in model_names[i+1:]:
+            left_ok=predictions[left]==y.to_numpy()
+            right_ok=predictions[right]==y.to_numpy()
+            table=[
+                [int((left_ok & right_ok).sum()),int((left_ok & ~right_ok).sum())],
+                [int((~left_ok & right_ok).sum()),int((~left_ok & ~right_ok).sum())]
+            ]
+            test=mcnemar(table,exact=False,correction=True)
+            pair_rows.append({
+                'Model A':left,'Model B':right,
+                'McNemar statistic':float(test.statistic),
+                'p_value':float(test.pvalue)
+            })
+
+    stability=pd.DataFrame([
+        {'Feature':feature,'Selected_folds':count,'Selection_percent':100*count/10}
+        for feature,count in feature_counts.items()
+    ]).sort_values(['Selected_folds','Feature'],ascending=[False,True])
+
+    return (
+        comparison,
+        best_name,
+        reports[best_name],
+        cms[best_name],
+        pd.DataFrame(pair_rows),
+        stability,
+        pd.DataFrame(tuning_rows)
+    )
