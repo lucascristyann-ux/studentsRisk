@@ -1,3 +1,4 @@
+import gc
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -243,26 +244,10 @@ def render(df,a):
 
     st.divider()
 
-    # Preserve the adviser's original WHO-5 exploratory analysis as supplementary.
-    with st.expander('Supplementary exploratory WHO-5 analysis from the original dashboard'):
-        valid=a.low_wellbeing.notna()
-        x=features(df).loc[valid]
-        y=a.loc[valid,'low_wellbeing'].astype(int)
-
-        st.subheader('Exploratory statistical significance')
-        result=significance(x,y)
-        st.dataframe(result.round(4),hide_index=True,use_container_width=True)
-
-        st.subheader('Original binary WHO-5 model comparison')
-        comp_old,name,metrics,imp,roc,cm=train(x,y)
-        st.caption(f'Original exploratory model selected by training CV ROC-AUC: {name}')
-        st.dataframe(comp_old.round(3),hide_index=True,use_container_width=True)
-        st.plotly_chart(polish(px.line(roc,x='FPR',y='TPR',title='Exploratory held-out ROC curve')),use_container_width=True)
-        st.plotly_chart(polish(px.bar(
-            imp.head(12).sort_values('Mean AUC drop'),
-            x='Mean AUC drop',y='Feature',orientation='h',
-            title='Exploratory predictor importance'
-        ),500),use_container_width=True)
+    # The original exploratory WHO-5 functions remain preserved in this module,
+    # but are not executed automatically because the research validation above
+    # is the primary result and duplicate model fitting can exceed cloud limits.
+    st.caption('Supplementary exploratory WHO-5 routines remain preserved in the source code and are not recomputed on this results page to keep the dashboard responsive.')
 
     st.warning('Research classifications and model outputs are not diagnoses and must not automate individual referrals.')
 
@@ -522,7 +507,7 @@ def chapter3_validate_models(df):
             {'model__n_estimators':[100,500],'model__max_features':['sqrt','log2']}
         ),
         'SVM':(
-            SVC(probability=True,random_state=42),
+            SVC(probability=True,random_state=42,cache_size=50),
             [
                 {'model__kernel':['linear'],'model__C':[1,2]},
                 {'model__kernel':['rbf'],'model__C':[1,2],'model__gamma':['scale']},
@@ -579,6 +564,8 @@ def chapter3_validate_models(df):
                 'Selected raw factors':len(selected_raw),
                 'Selected encoded features':len(selected_names)
             })
+            del search,pipe,raw_prob,aligned
+            gc.collect()
 
     y_int=y.map({name:i for i,name in enumerate(CHAPTER3_TIERS)}).astype(int)
     metric_rows=[]
