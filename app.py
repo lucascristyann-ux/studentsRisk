@@ -19,7 +19,7 @@ raw=upload.getvalue()
 fingerprint=hashlib.sha256(raw).hexdigest()
 if st.session_state.get('dataset_fingerprint')!=fingerprint:
     st.session_state.dataset_fingerprint=fingerprint
-    for k in ['cluster_ready','sig_ready','train_ready']:
+    for k in ['cluster_ready','sig_ready','train_ready','chapter3_feature_ready','chapter3_model_ready']:
         st.session_state.pop(k,None)
 try:
     df=load_data(raw)
