@@ -15,7 +15,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score,average_precision_score,balanced_accuracy_score,f1_score,recall_score,confusion_matrix,brier_score_loss,roc_curve
 from sklearn.inspection import permutation_importance
-from .core import domains
+from sklearn.feature_selection import mutual_info_classif
+from .core import domains,chapter3_research_scores,CHAPTER3_TIERS
 from .theme import polish
 
 def features(df):
@@ -88,3 +89,157 @@ def render(df,a):
         st.plotly_chart(polish(px.imshow(cm,text_auto=True,color_continuous_scale='Teal',labels={'x':'Predicted','y':'Observed'},title='Held-out confusion matrix')),use_container_width=True)
         st.plotly_chart(polish(px.bar(imp.head(12).sort_values('Mean AUC drop'),x='Mean AUC drop',y='Feature',orientation='h',title='Predictor importance on held-out data'),520),use_container_width=True)
     st.warning('Prediction is of WHO-5 screening status, not a diagnosis. Threshold 0.5 is not a validated clinical action cutoff; never automate individual referrals.')
+
+    # CHAPTER 3 ADDITION: Objective 2
+    st.divider()
+    st.markdown('### Research Objective 2 · Significant survey factors')
+    st.caption('This section screens non-CRI survey predictors against the four research risk tiers. CRI component scores are shown separately because using them as predictors would leak the target definition into the model.')
+
+    if st.button('Run Objective 2 feature selection',key='chapter3_feature_selection') or st.session_state.get('chapter3_feature_ready'):
+        st.session_state.chapter3_feature_ready=True
+        selected,components=chapter3_feature_screen(df)
+
+        c1,c2,c3=st.columns(3)
+        c1.metric('Candidate factors',f'{len(selected):,}')
+        c2.metric('Selected factors',f'{int(selected.Selected_for_model.sum()):,}')
+        c3.metric('Significant categorical factors',f'{int(selected.Significant_Chi2.sum()):,}')
+
+        st.subheader('Feature-selection results')
+        show=selected.copy()
+        show['Information_Gain']=show['Information_Gain'].round(4)
+        show['Chi2_p']=show['Chi2_p'].round(4)
+        st.dataframe(show,hide_index=True,use_container_width=True)
+
+        ranked=selected.sort_values('Information_Gain',ascending=False).head(12).sort_values('Information_Gain')
+        st.plotly_chart(
+            polish(px.bar(
+                ranked,x='Information_Gain',y='Feature',orientation='h',
+                title='Top survey factors by information gain'
+            ),520),
+            use_container_width=True
+        )
+
+        st.subheader('CRI component associations · descriptive only')
+        st.dataframe(components.round(3),use_container_width=True)
+        st.caption('For Objective 3, feature selection will be repeated inside each training fold to prevent leakage into validation folds, as required by Chapter 3.')
+
+
+
+# CHAPTER 3 ADDITION: Objective 2 feature screening
+def chapter3_candidate_features(df):
+    """
+    Candidate predictors that do not directly build the CRI target.
+    The five CRI component scores are reported separately to avoid target leakage.
+    """
+    d=domains(df,reverse=True).copy()
+    keep_domains=['academic','housing','autonomy','digital_self','self_care','coping','relationship_access','help_literacy']
+    x=d[keep_domains].copy()
+
+    x['age']=pd.to_numeric(df['Age'],errors='coerce')
+    x['college']=df['College'].astype('object')
+    x['year_level']=df['Year level/status'].astype('object')
+    x['internet_access']=df.iloc[:,14].astype('object')
+    x['housing_status']=df.iloc[:,43].astype('object')
+    return x
+
+@st.cache_data(show_spinner='Running Objective 2 feature screening...',max_entries=3)
+def chapter3_feature_screen(df):
+    r=chapter3_research_scores(df)
+    valid=r.Research_scope & r.Risk_tier_quartile.notna()
+    x=chapter3_candidate_features(df).loc[valid].copy()
+    y=r.loc[valid,'Risk_tier_quartile'].astype(str)
+    y_code=y.map({name:i for i,name in enumerate(CHAPTER3_TIERS)}).astype(int)
+
+    rows=[]
+    numeric=x.select_dtypes(include='number').columns.tolist()
+    categorical=[col for col in x.columns if col not in numeric]
+
+    # Information gain / mutual information for numeric predictors.
+    for col in numeric:
+        s=pd.to_numeric(x[col],errors='coerce')
+        filled=s.fillna(s.median())
+        if filled.nunique()<2:
+            mi=0.0
+        else:
+            mi=float(mutual_info_classif(
+                filled.to_frame(),y_code,
+                discrete_features=False,random_state=42
+            )[0])
+        rows.append({
+            'Feature':col,'Type':'Numeric',
+            'Information_Gain':mi,'Chi2_p':np.nan,
+            'Keep_after_corr':True
+        })
+
+    # Information gain + chi-square for categorical predictors.
+    for col in categorical:
+        s=x[col].fillna('Missing').astype(str)
+        codes,_=pd.factorize(s,sort=True)
+        if pd.Series(codes).nunique()<2:
+            mi=0.0
+        else:
+            mi=float(mutual_info_classif(
+                pd.DataFrame({col:codes}),y_code,
+                discrete_features=True,random_state=42
+            )[0])
+        tab=pd.crosstab(s,y)
+        p=np.nan
+        if min(tab.shape)>=2:
+            _,p,_,_=chi2_contingency(tab)
+        rows.append({
+            'Feature':col,'Type':'Categorical',
+            'Information_Gain':mi,'Chi2_p':p,
+            'Keep_after_corr':True
+        })
+
+    result=pd.DataFrame(rows)
+
+    # Correlation filter for numeric predictors. If |r| > .85, keep the one
+    # with the higher information gain.
+    if len(numeric)>1:
+        nx=x[numeric].apply(pd.to_numeric,errors='coerce')
+        nx=nx.fillna(nx.median())
+        corr=nx.corr(method='pearson').abs()
+        mi_map=result.set_index('Feature')['Information_Gain'].to_dict()
+        dropped=set()
+        for i,left in enumerate(numeric):
+            if left in dropped:
+                continue
+            for right in numeric[i+1:]:
+                if right in dropped:
+                    continue
+                if corr.loc[left,right]>.85:
+                    if mi_map.get(left,0)>=mi_map.get(right,0):
+                        dropped.add(right)
+                    else:
+                        dropped.add(left)
+                        break
+        result.loc[result.Feature.isin(dropped),'Keep_after_corr']=False
+
+    result['Significant_Chi2']=(
+        result['Type'].eq('Categorical')
+        & result['Chi2_p'].notna()
+        & result['Chi2_p'].lt(.05)
+    )
+    result['Selected_for_model']=np.where(
+        result['Type'].eq('Numeric'),
+        result['Keep_after_corr'] & result['Information_Gain'].gt(0),
+        result['Significant_Chi2']
+    )
+    result=result.sort_values(
+        ['Selected_for_model','Information_Gain'],
+        ascending=[False,False]
+    ).reset_index(drop=True)
+
+    # Descriptive association of CRI component scores. These are not used
+    # as predictive inputs because they mathematically define the target.
+    components=r.loc[valid,[
+        'PHQ9_score','WHO5_score','MSPSS_mean',
+        'Food_security_score','AUDIT9_score','CRI'
+    ]].copy()
+    component_corr=components.corr(method='spearman')['CRI'].drop('CRI')
+    component_table=component_corr.rename('Spearman_with_CRI').to_frame()
+    component_table['Absolute_association']=component_table.Spearman_with_CRI.abs()
+    component_table=component_table.sort_values('Absolute_association',ascending=False)
+
+    return result,component_table
