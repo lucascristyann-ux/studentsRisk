@@ -65,7 +65,10 @@ if upload is not None:
                     st.session_state['survey_source']='Private storage'
                     st.session_state['persistent_object_path']=saved['object_path']
                     st.session_state.pop('storage_save_error',None)
-                    st.sidebar.success('Dataset validated and saved privately.')
+                    st.sidebar.markdown(
+                        '<div class="storage-success"><span class="storage-success-dot"></span><span>Dataset validated and saved privately.</span></div>',
+                        unsafe_allow_html=True
+                    )
 
 if 'survey_raw' not in st.session_state:
     hero('Student Wellness Intelligence','Analytics, behavioral insights and evidence-informed program planning')
