@@ -4,9 +4,10 @@ import streamlit as st
 import plotly.express as px
 px.defaults.template = "plotly_white"
 px.defaults.color_discrete_sequence = ["#0F766E", "#2563EB", "#D97706", "#7C3AED", "#0891B2"]
-from scipy.stats import mannwhitneyu,chi2_contingency
+from scipy.stats import mannwhitneyu,chi2_contingency,chi2
 from statsmodels.stats.multitest import multipletests
 from statsmodels.stats.contingency_tables import mcnemar
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 from sklearn.model_selection import train_test_split,StratifiedKFold,cross_validate,GridSearchCV
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -15,8 +16,9 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import GaussianNB,ComplementNB
 from sklearn.svm import SVC
+from sklearn.decomposition import PCA
 from sklearn.metrics import roc_auc_score,average_precision_score,balanced_accuracy_score,f1_score,recall_score,confusion_matrix,brier_score_loss,roc_curve,accuracy_score,precision_score,classification_report
 from sklearn.inspection import permutation_importance
 from sklearn.feature_selection import mutual_info_classif
@@ -418,7 +420,16 @@ def chapter3_validate_models(df):
         ),
         'Naive Bayes':(
             GaussianNB(),
-            {'model__var_smoothing':[1e-9,1e-8]}
+            [
+                {
+                    'model':[GaussianNB()],
+                    'model__var_smoothing':[1e-9,1e-8]
+                },
+                {
+                    'model':[ComplementNB()],
+                    'model__alpha':[0.5,1.0]
+                }
+            ]
         ),
         'Random Forest':(
             RandomForestClassifier(random_state=42,n_jobs=1),
@@ -549,3 +560,53 @@ def chapter3_validate_models(df):
         stability,
         pd.DataFrame(tuning_rows)
     )
+
+
+# CHAPTER 3 ADDITION: preprocessing diagnostics
+@st.cache_data(show_spinner='Running Chapter 3 preprocessing diagnostics...',max_entries=3)
+def chapter3_preprocessing_diagnostics(df):
+    r=chapter3_research_scores(df)
+    valid=r.Research_scope & r.Risk_tier_final.notna()
+    x=chapter3_candidate_features(df).loc[valid].copy()
+    numeric=x.select_dtypes(include='number').columns.tolist()
+
+    if not numeric:
+        raise ValueError('No numeric candidate predictors are available for diagnostics.')
+
+    z=x[numeric].apply(pd.to_numeric,errors='coerce')
+    z=z.fillna(z.median())
+    z=z.loc[:,z.nunique()>1]
+
+    if z.shape[1]<2:
+        raise ValueError('At least two non-constant numeric predictors are required.')
+
+    scaled=StandardScaler().fit_transform(z)
+
+    vif=pd.DataFrame({
+        'Feature':z.columns,
+        'VIF':[variance_inflation_factor(scaled,i) for i in range(scaled.shape[1])]
+    }).sort_values('VIF',ascending=False)
+    vif['VIF_above_10']=vif.VIF.gt(10)
+
+    center=scaled.mean(axis=0)
+    cov=np.cov(scaled,rowvar=False)
+    inv=np.linalg.pinv(cov)
+    diff=scaled-center
+    md2=np.einsum('ij,jk,ik->i',diff,inv,diff)
+    threshold=float(chi2.ppf(.99,df=scaled.shape[1]))
+    outliers=pd.DataFrame({
+        'Dataset_row':z.index,
+        'Mahalanobis_D2':md2,
+        'Flag_above_99pct_chi2':md2>threshold
+    }).sort_values('Mahalanobis_D2',ascending=False)
+
+    pca_table=pd.DataFrame()
+    if vif['VIF_above_10'].any():
+        pca=PCA().fit(scaled)
+        pca_table=pd.DataFrame({
+            'Component':np.arange(1,len(pca.explained_variance_ratio_)+1),
+            'Explained_variance_percent':100*pca.explained_variance_ratio_,
+            'Cumulative_percent':100*np.cumsum(pca.explained_variance_ratio_)
+        })
+
+    return vif,outliers,threshold,pca_table
