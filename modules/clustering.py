@@ -93,20 +93,41 @@ def render(df,a):
         st.caption('K-Means cluster numbers are arbitrary. Clusters are ordered from lowest to highest centroid risk score before mapping to Low, Moderate, High and Critical for agreement testing.')
 
     st.divider()
+    with st.expander('Supplementary behavioral clustering from the original dashboard'):
+        d=domains(df,reverse=True)
+        q,labels,scatter,profile,ari=fit_clusters(d)
+        st.metric('Cluster stability · mean adjusted Rand index',f'{ari:.3f}')
 
-    if not st.button('Run clustering',type='primary',key='run_clusters') and 'cluster_ready' not in st.session_state:return
-    st.session_state.cluster_ready=True
-    d=domains(df,reverse=True)
-    q,labels,scatter,profile,ari=fit_clusters(d)
-    st.metric('Cluster stability · mean adjusted Rand index',f'{ari:.3f}')
-    st.plotly_chart(polish(px.line(q,x='k',y='silhouette',markers=True,title='Selecting the number of behavioral segments')),use_container_width=True)
-    st.plotly_chart(polish(px.scatter(scatter,x='PC1',y='PC2',color='Cluster',opacity=.7,title='Student behavioral segments · PCA view')),use_container_width=True)
-    st.plotly_chart(polish(px.imshow(profile,text_auto='.2f',aspect='auto',color_continuous_scale='Teal',title='Behavioral domain profiles')),use_container_width=True)
-    cross=pd.crosstab(a.loc[labels.index,'College'],labels)
-    safe=protected_table(cross,a.College.value_counts())
-    st.subheader('College × cluster (small cells suppressed)')
-    st.dataframe(safe,use_container_width=True)
-    st.caption('Cluster labels are descriptive, not validated risk tiers. Reverse-coding requires expert item-level verification.')
+        c1,c2=st.columns(2)
+        with c1:
+            st.plotly_chart(
+                polish(px.line(
+                    q,x='k',y='silhouette',markers=True,
+                    title='Selecting the number of behavioral segments'
+                ),410),
+                use_container_width=True
+            )
+        with c2:
+            st.plotly_chart(
+                polish(px.scatter(
+                    scatter,x='PC1',y='PC2',color='Cluster',opacity=.68,
+                    title='Student behavioral segments · PCA view'
+                ),410),
+                use_container_width=True
+            )
+
+        st.plotly_chart(
+            polish(px.imshow(
+                profile,text_auto='.2f',aspect='auto',
+                color_continuous_scale=['#F7F1EA','#D7AE78','#91A66B'],
+                title='Behavioral domain profiles'
+            ),430),
+            use_container_width=True
+        )
+        cross=pd.crosstab(a.loc[labels.index,'College'],labels)
+        safe=protected_table(cross,a.College.value_counts())
+        st.dataframe(safe,use_container_width=True)
+        st.caption('Cluster labels are descriptive, not validated risk tiers. Reverse-coding requires expert item-level verification.')
 
 
 # CHAPTER 3 ADDITION: fixed k=4 risk-cluster validation
