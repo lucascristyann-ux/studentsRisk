@@ -9,17 +9,28 @@ setup()
 st.sidebar.markdown('## ◈ ADSSU')
 st.sidebar.caption('OFFICE OF STUDENT AFFAIRS & SERVICES')
 st.sidebar.divider()
-upload=st.sidebar.file_uploader('Survey dataset',type='csv',help='Use authorized de-identified CSV only. Public hosting is not suitable for sensitive wellness data.')
-if upload is None:
+upload=st.sidebar.file_uploader(
+    'Survey dataset',
+    type='csv',
+    key='survey_dataset_uploader',
+    help='Use authorized de-identified CSV only. Public hosting is not suitable for sensitive wellness data.'
+)
+if upload is not None:
+    st.session_state['survey_raw']=upload.getvalue()
+
+if 'survey_raw' not in st.session_state:
     hero('Student Wellness Intelligence','Analytics, behavioral insights and evidence-informed program planning')
     st.info('Upload an authorized de-identified ADSSU-CWI CSV from the sidebar to begin.')
     st.warning('Research prototype only. Use institution-approved authentication and private hosting before processing sensitive student responses.')
     st.stop()
-raw=upload.getvalue()
+
+raw=st.session_state['survey_raw']
+if upload is None:
+    st.sidebar.caption('Using the dataset kept in this current Streamlit session.')
 fingerprint=hashlib.sha256(raw).hexdigest()
 if st.session_state.get('dataset_fingerprint')!=fingerprint:
     st.session_state.dataset_fingerprint=fingerprint
-    for k in ['cluster_ready','sig_ready','train_ready','chapter3_feature_ready','chapter3_model_ready']:
+    for k in ['cluster_ready','sig_ready','train_ready','chapter3_feature_ready','chapter3_model_ready','chapter3_intervention_ready','chapter3_best_model','chapter3_model_comparison']:
         st.session_state.pop(k,None)
 try:
     df=load_data(raw)
