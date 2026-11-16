@@ -128,6 +128,51 @@ def setup():
         font-weight:700!important;
     }
 
+    /* Current dataset status card */
+    [data-testid="stSidebar"] .dataset-status{
+        margin:10px 0 14px;
+        padding:13px 14px;
+        border-radius:15px;
+        background:rgba(255,255,255,.075);
+        border:1px solid rgba(255,255,255,.11);
+        box-shadow:0 7px 18px rgba(20,10,4,.10);
+    }
+    [data-testid="stSidebar"] .dataset-status-label{
+        font-size:9px;
+        letter-spacing:.15em;
+        font-weight:800;
+        color:#DCC29E!important;
+        margin-bottom:5px;
+    }
+    [data-testid="stSidebar"] .dataset-status-name{
+        font-size:12px;
+        font-weight:760;
+        color:#FFFFFF!important;
+        line-height:1.35;
+        word-break:break-word;
+    }
+    [data-testid="stSidebar"] .dataset-status-meta{
+        margin-top:5px;
+        font-size:11px;
+        color:#D8CBC1!important;
+    }
+    [data-testid="stSidebar"] .dataset-status-state{
+        margin-top:8px;
+        font-size:10.5px;
+        color:#E6DAD0!important;
+        display:flex;
+        align-items:center;
+        gap:7px;
+    }
+    [data-testid="stSidebar"] .dataset-status-state span{
+        width:8px;
+        height:8px;
+        border-radius:50%;
+        background:#A7BD72;
+        box-shadow:0 0 0 3px rgba(167,189,114,.14);
+        display:inline-block;
+    }
+
     /* Navigation */
     [data-testid="stSidebar"] [role="radiogroup"]{gap:5px}
     [data-testid="stSidebar"] [role="radiogroup"] label{
