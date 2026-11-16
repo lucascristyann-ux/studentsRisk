@@ -31,7 +31,11 @@ def render(df,a):
     c2.metric('Valid composite scores',f'{len(research):,}')
     c3.metric('Adapted AUDIT respondents',f'{int((r.Research_scope & r.AUDIT_applicable).sum()):,}')
 
-    counts=research['Risk_tier_quartile'].value_counts().reindex(CHAPTER3_TIERS,fill_value=0)
+    o1,o2=st.columns(2)
+    o1.metric('PHQ-9 item 9 escalations',f'{int((research.PHQ9_item9_override).sum()):,}')
+    o2.metric('Immediate-danger escalations',f'{int((research.Immediate_danger_override).sum()):,}')
+
+    counts=research['Risk_tier_final'].value_counts().reindex(CHAPTER3_TIERS,fill_value=0)
     risk=counts.rename('Responses').to_frame()
     risk['Percent']=100*risk['Responses']/risk['Responses'].sum()
     risk.index.name='Risk tier'
@@ -43,7 +47,7 @@ def render(df,a):
         chart=risk.reset_index()
         fig=px.bar(
             chart,x='Risk tier',y='Responses',text='Responses',
-            title='Quartile-based composite wellness risk distribution',
+            title='Final Chapter 3 wellness risk distribution',
             category_orders={'Risk tier':CHAPTER3_TIERS},
             color_discrete_sequence=[TEAL]
         )
@@ -53,5 +57,5 @@ def render(df,a):
     cols=['PHQ9_score','WHO5_score','MSPSS_mean','Food_security_score','AUDIT9_score','CRI','CRI_no_AUDIT']
     summary_table=research[cols].describe().T[['count','mean','std','min','25%','50%','75%','max']]
     st.dataframe(summary_table.round(2),use_container_width=True)
-    st.caption('This research section uses the OSAS-adapted 12-item MSPSS on a 1–5 scale and the OSAS-adapted 9-item AUDIT. The four tiers are sample-relative research quartiles, not clinical diagnoses or automated referral decisions.')
+    st.caption('This research section uses the OSAS-adapted 12-item MSPSS on a 1–5 scale and the OSAS-adapted 9-item AUDIT. The base tiers are sample-relative CRI quartiles. Chapter 3 escalation rules are then applied: PHQ-9 item 9 > 0 is at least High Risk, and an Immediate Danger = Yes response is Critical Risk. These are research classifications, not clinical diagnoses or automated referral decisions.')
 
