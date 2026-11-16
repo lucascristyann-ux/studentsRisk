@@ -58,3 +58,15 @@ def protected_table(counts,denominators=None):
 
 def download_csv(df,name,label):
     st.download_button(label,df.to_csv(index=True).encode('utf-8'),file_name=name,mime='text/csv')
+
+
+# CHAPTER 3 ADDITION: OSAS-adapted MSPSS scoring
+def chapter3_mspss_score(df):
+    """Calculate the 12-item MSPSS mean using the OSAS 1-5 response scale."""
+    mspss=df.iloc[:,52:64].apply(first_num)
+    mspss=mspss.where(mspss.ge(1) & mspss.le(5))
+    missing=mspss.isna().sum(axis=1)
+    row_median=mspss.median(axis=1)
+    filled=mspss.T.fillna(row_median).T
+    score=filled.mean(axis=1)
+    return score.where(missing<=1)
