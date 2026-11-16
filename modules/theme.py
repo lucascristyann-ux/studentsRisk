@@ -128,6 +128,38 @@ def setup():
         font-weight:700!important;
     }
 
+    /* Private storage success message */
+    [data-testid="stSidebar"] .storage-success{
+        display:flex;
+        align-items:flex-start;
+        gap:9px;
+        margin:10px 0 12px;
+        padding:12px 13px;
+        border-radius:13px;
+        background:#E7EEDB!important;
+        border:1px solid #B7C69A;
+        box-shadow:0 5px 14px rgba(35,25,18,.06);
+        color:#49352B!important;
+        font-size:11.5px;
+        line-height:1.45;
+        font-weight:700;
+    }
+    [data-testid="stSidebar"] .storage-success,
+    [data-testid="stSidebar"] .storage-success *{
+        color:#49352B!important;
+        -webkit-text-fill-color:#49352B!important;
+        opacity:1!important;
+    }
+    [data-testid="stSidebar"] .storage-success-dot{
+        width:8px;
+        height:8px;
+        min-width:8px;
+        margin-top:4px;
+        border-radius:50%;
+        background:#7D9655!important;
+        box-shadow:0 0 0 3px rgba(125,150,85,.14);
+    }
+
     /* Current dataset status card */
     [data-testid="stSidebar"] .dataset-status{
         margin:10px 0 14px;
