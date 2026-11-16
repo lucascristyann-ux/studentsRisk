@@ -4,15 +4,15 @@ import plotly.express as px
 # Warm academic palette inspired by the supplied dashboard reference.
 NAVY='#3B281F'
 NAVY_2='#563A2A'
-TEAL='#82994A'
+TEAL='#91A66B'
 TEAL_DARK='#657A35'
-BLUE='#8877D3'
+BLUE='#7F9FA8'
 MUTED='#7D7068'
 BG='#F3EEE8'
 BORDER='#DED3C8'
 ORANGE='#E88920'
 CORAL='#C96F5B'
-PALETTE=[TEAL,ORANGE,BLUE,CORAL,'#B79A6B','#6F8B78']
+PALETTE=[TEAL,'#DFA06F',BLUE,'#A28DC3','#D58B7C','#BBA079']
 
 def setup():
     px.defaults.template='plotly_white'
@@ -90,20 +90,42 @@ def setup():
         line-height:1.45;
     }
 
-    /* File uploader */
+    /* Survey dataset uploader: soft accent card */
     [data-testid="stSidebar"] [data-testid="stFileUploader"]{
-        background:rgba(255,255,255,.065);
-        border:1px solid rgba(255,255,255,.10);
-        border-radius:16px;
-        padding:10px;
+        position:relative;
+        overflow:hidden;
+        background:
+          radial-gradient(circle at 92% 8%,rgba(255,255,255,.20),transparent 32%),
+          linear-gradient(135deg,#9EAC7B 0%,#B8A17F 100%);
+        border:1px solid rgba(255,255,255,.22);
+        border-radius:18px;
+        padding:11px;
+        box-shadow:0 9px 22px rgba(30,17,9,.12);
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"]:before{
+        content:'';
+        position:absolute;
+        width:72px;height:72px;
+        border-radius:50%;
+        right:-30px;bottom:-34px;
+        background:rgba(255,255,255,.10);
+        pointer-events:none;
     }
     [data-testid="stSidebar"] [data-testid="stFileUploader"] section{
-        background:#FDFBF8!important;
-        border-radius:13px!important;
-        border:0!important;
+        background:rgba(255,253,249,.96)!important;
+        border-radius:14px!important;
+        border:1px solid rgba(255,255,255,.58)!important;
+        box-shadow:0 3px 10px rgba(66,45,31,.06);
     }
     [data-testid="stSidebar"] [data-testid="stFileUploader"] section *{
         color:#52392B!important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] button{
+        border-radius:10px!important;
+        border:1px solid #C8B59F!important;
+        background:#F8F2EB!important;
+        color:#5B4234!important;
+        font-weight:700!important;
     }
 
     /* Navigation */
@@ -341,24 +363,61 @@ def polish(fig,height=420):
         height=height,
         margin=dict(l=24,r=26,t=58,b=34),
         paper_bgcolor='#FFFFFF',
-        plot_bgcolor='#FFFFFF',
+        plot_bgcolor='#FFFCF9',
         font=dict(family='Arial',color=NAVY,size=12),
         title_font=dict(size=17,color=NAVY,family='Arial'),
         legend_title_text='',
         hoverlabel=dict(bgcolor='#FFFDFB',font_color=NAVY,bordercolor='#D8CBC0'),
-        colorway=PALETTE
+        colorway=PALETTE,
+        bargap=.28,
+        hovermode='closest',
+        legend=dict(
+            bgcolor='rgba(255,255,255,.72)',
+            bordercolor='rgba(222,211,200,.72)',
+            borderwidth=1
+        )
     )
+
+    # Softer graph shapes without changing any data or calculations.
+    for trace in fig.data:
+        if trace.type in ('bar','histogram'):
+            trace.update(opacity=.88,marker_line_width=0)
+            if trace.type=='bar':
+                try:
+                    trace.update(marker_cornerradius=7)
+                except Exception:
+                    pass
+        elif trace.type in ('scatter','scattergl'):
+            try:
+                trace.update(line=dict(width=2.4))
+            except Exception:
+                pass
+        elif trace.type=='pie':
+            try:
+                existing_hole=float(trace.hole or 0)
+                trace.update(
+                    hole=max(existing_hole,.38),
+                    sort=False,
+                    marker_line=dict(color='#FFF9F4',width=2)
+                )
+            except Exception:
+                pass
+
     fig.update_xaxes(
         showgrid=True,
-        gridcolor='#EFE8E1',
+        gridcolor='#F1EAE3',
         zeroline=False,
-        linecolor='#DED3C8',
-        tickfont=dict(color='#7D7068')
+        linecolor='#E2D7CC',
+        tickfont=dict(color='#7D7068'),
+        ticks='outside',
+        tickcolor='#D8CDC3'
     )
     fig.update_yaxes(
         showgrid=False,
         zeroline=False,
-        linecolor='#DED3C8',
-        tickfont=dict(color='#7D7068')
+        linecolor='#E2D7CC',
+        tickfont=dict(color='#7D7068'),
+        ticks='outside',
+        tickcolor='#D8CDC3'
     )
     return fig
