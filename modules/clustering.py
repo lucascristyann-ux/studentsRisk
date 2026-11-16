@@ -8,8 +8,8 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score,adjusted_rand_score
-from .core import domains,protected_table
+from sklearn.metrics import silhouette_score,adjusted_rand_score,cohen_kappa_score
+from .core import domains,protected_table,chapter3_research_scores,CHAPTER3_TIERS
 from .theme import polish
 
 @st.cache_data(show_spinner='Computing behavioral clusters...',max_entries=3)
@@ -34,6 +34,39 @@ def fit_clusters(d):
 def render(df,a):
     st.markdown('### Behavioral pattern discovery')
     st.caption('Unsupervised clustering uses behavioral domains, excluding wellness outcome, safety responses, college, and direct identifiers.')
+
+    st.divider()
+    st.markdown('### Chapter 3 · K-Means risk validation')
+    st.caption('This is separate from the behavioral clustering above. It fixes k=4 and uses the five standardized CRI subscales, as specified in Chapter 3.')
+
+    if st.button('Run Chapter 3 k=4 validation',key='chapter3_kmeans') or st.session_state.get('chapter3_kmeans_ready'):
+        st.session_state.chapter3_kmeans_ready=True
+        try:
+            sil,kappa,profile4,agreement,centroids=chapter3_risk_clusters(df)
+        except Exception as e:
+            st.error(f'Chapter 3 k-means validation could not run: {e}')
+        else:
+            c1,c2=st.columns(2)
+            c1.metric('Silhouette coefficient',f'{sil:.3f}')
+            c2.metric("Cohen's kappa",f'{kappa:.3f}')
+
+            if kappa>=.60:
+                st.success("Kappa is at least 0.60, meeting the Chapter 3 substantial-agreement criterion.")
+            else:
+                st.warning("Kappa is below 0.60. Report this result as limited agreement rather than forcing the clusters to match the quartile tiers.")
+
+            st.subheader('Four-cluster standardized profile')
+            st.dataframe(profile4.round(3),use_container_width=True)
+
+            st.subheader('K-Means tier × final Chapter 3 tier')
+            st.dataframe(agreement,use_container_width=True)
+
+            with st.expander('Cluster centroids and risk-order mapping'):
+                st.dataframe(centroids.round(3),use_container_width=True)
+
+            st.caption('K-Means cluster numbers are arbitrary. The four clusters are ordered from lowest to highest centroid risk score before being mapped to Low, Moderate, High and Critical for agreement testing.')
+    st.divider()
+
     if not st.button('Run clustering',type='primary',key='run_clusters') and 'cluster_ready' not in st.session_state:return
     st.session_state.cluster_ready=True
     d=domains(df,reverse=True)
@@ -47,3 +80,67 @@ def render(df,a):
     st.subheader('College × cluster (small cells suppressed)')
     st.dataframe(safe,use_container_width=True)
     st.caption('Cluster labels are descriptive, not validated risk tiers. Reverse-coding requires expert item-level verification.')
+
+
+# CHAPTER 3 ADDITION: fixed k=4 risk-cluster validation
+@st.cache_data(show_spinner='Running Chapter 3 k-means validation...',max_entries=3)
+def chapter3_risk_clusters(df):
+    r=chapter3_research_scores(df)
+    cols=['z_PHQ9','z_AUDIT9','z_Food','z_WHO5','z_MSPSS']
+    valid=(
+        r.Research_scope
+        & r.Risk_tier_final.notna()
+        & r[cols].notna().all(axis=1)
+    )
+    x=r.loc[valid,cols].astype(float)
+
+    if len(x)<20:
+        raise ValueError('Not enough complete research-scope records for k=4 clustering.')
+
+    km=KMeans(n_clusters=4,n_init=50,random_state=42).fit(x)
+    sil=float(silhouette_score(x,km.labels_))
+
+    centroids=pd.DataFrame(km.cluster_centers_,columns=cols,index=range(4))
+    centroids['Risk_score']=(
+        centroids['z_PHQ9']
+        +centroids['z_AUDIT9']
+        +centroids['z_Food']
+        -centroids['z_WHO5']
+        -centroids['z_MSPSS']
+    )
+    ordered=centroids['Risk_score'].sort_values().index.tolist()
+    mapping={cluster:CHAPTER3_TIERS[i] for i,cluster in enumerate(ordered)}
+
+    cluster_tier=pd.Series(
+        [mapping[int(label)] for label in km.labels_],
+        index=x.index,
+        name='KMeans_risk_tier'
+    )
+    observed=r.loc[x.index,'Risk_tier_final'].astype(str)
+    kappa=float(cohen_kappa_score(
+        observed,cluster_tier,
+        labels=CHAPTER3_TIERS
+    ))
+
+    profile=x.copy()
+    profile['CRI']=r.loc[x.index,'CRI']
+    profile['KMeans_risk_tier']=cluster_tier
+    summary=profile.groupby('KMeans_risk_tier').agg(
+        Responses=('CRI','size'),
+        Mean_CRI=('CRI','mean'),
+        z_PHQ9=('z_PHQ9','mean'),
+        z_AUDIT9=('z_AUDIT9','mean'),
+        z_Food=('z_Food','mean'),
+        z_WHO5=('z_WHO5','mean'),
+        z_MSPSS=('z_MSPSS','mean')
+    ).reindex(CHAPTER3_TIERS)
+
+    agreement=pd.crosstab(
+        observed.rename('Quartile_plus_override'),
+        cluster_tier,
+        dropna=False
+    ).reindex(index=CHAPTER3_TIERS,columns=CHAPTER3_TIERS,fill_value=0)
+
+    centroids['Mapped_tier']=pd.Series(mapping)
+    centroids=centroids.sort_values('Risk_score')
+    return sil,kappa,summary,agreement,centroids
