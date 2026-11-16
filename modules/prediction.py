@@ -141,6 +141,8 @@ def render(df,a):
         except Exception as e:
             st.error(f'Objective 3 validation could not run: {e}')
         else:
+            st.session_state.chapter3_best_model=best
+            st.session_state.chapter3_model_comparison=comp.to_dict('records')
             st.success(f'Best research model by macro F1: {best}')
             st.subheader('10-fold cross-validation model comparison')
             st.dataframe(comp.round(3),hide_index=True,use_container_width=True)
