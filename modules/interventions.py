@@ -46,8 +46,8 @@ def render(df,a):
         st.session_state.chapter3_intervention_ready=True
 
         r=chapter3_research_scores(df)
-        research=r[r.Research_scope & r.Risk_tier_quartile.notna()].copy()
-        counts=research.Risk_tier_quartile.value_counts().reindex(CHAPTER3_TIERS,fill_value=0)
+        research=r[r.Research_scope & r.Risk_tier_final.notna()].copy()
+        counts=research.Risk_tier_final.value_counts().reindex(CHAPTER3_TIERS,fill_value=0)
         total=max(int(counts.sum()),1)
         high_critical=int(counts.get('High Risk',0)+counts.get('Critical Risk',0))
         hc_percent=100*high_critical/total
