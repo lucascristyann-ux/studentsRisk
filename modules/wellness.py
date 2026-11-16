@@ -45,18 +45,42 @@ def render(df,a):
     risk['Percent']=100*risk['Responses']/risk['Responses'].sum()
     risk.index.name='Risk tier'
 
-    c1,c2=st.columns([1,1.35])
+    chart=risk.reset_index()
+    risk_colors={
+        'Low Risk':'#91A66B',
+        'Moderate Risk':'#D8B56A',
+        'High Risk':'#D9915B',
+        'Critical Risk':'#C97167'
+    }
+    high_critical=int(counts.get('High Risk',0)+counts.get('Critical Risk',0))
+    high_critical_pct=100*high_critical/max(int(counts.sum()),1)
+
+    st.metric('High + Critical research tiers',f'{high_critical:,} ({high_critical_pct:.1f}%)')
+
+    c1,c2=st.columns([1.25,1])
     with c1:
-        st.dataframe(risk.round(1),use_container_width=True)
-    with c2:
-        chart=risk.reset_index()
         fig=px.bar(
             chart,x='Risk tier',y='Responses',text='Responses',
-            title='Final Chapter 3 wellness risk distribution',
+            color='Risk tier',
+            title='Final wellness risk distribution',
             category_orders={'Risk tier':CHAPTER3_TIERS},
-            color_discrete_sequence=[TEAL]
+            color_discrete_map=risk_colors
         )
-        st.plotly_chart(polish(fig),use_container_width=True)
+        fig.update_traces(textposition='outside',cliponaxis=False)
+        st.plotly_chart(polish(fig,430),use_container_width=True)
+    with c2:
+        fig=px.pie(
+            chart,names='Risk tier',values='Responses',
+            color='Risk tier',hole=.48,
+            title='Share of final research risk tiers',
+            category_orders={'Risk tier':CHAPTER3_TIERS},
+            color_discrete_map=risk_colors
+        )
+        fig.update_traces(textinfo='percent+label')
+        st.plotly_chart(polish(fig,430),use_container_width=True)
+
+    with st.expander('View exact risk-tier counts and percentages'):
+        st.dataframe(risk.round(1),use_container_width=True)
 
     st.subheader('Research scoring summary')
     cols=['PHQ9_score','WHO5_score','MSPSS_mean','Food_security_score','AUDIT9_score','CRI','CRI_no_AUDIT']
