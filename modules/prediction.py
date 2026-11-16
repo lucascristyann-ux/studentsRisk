@@ -199,9 +199,9 @@ def chapter3_candidate_features(df):
 @st.cache_data(show_spinner='Running Objective 2 feature screening...',max_entries=3)
 def chapter3_feature_screen(df):
     r=chapter3_research_scores(df)
-    valid=r.Research_scope & r.Risk_tier_quartile.notna()
+    valid=r.Research_scope & r.Risk_tier_final.notna()
     x=chapter3_candidate_features(df).loc[valid].copy()
-    y=r.loc[valid,'Risk_tier_quartile'].astype(str)
+    y=r.loc[valid,'Risk_tier_final'].astype(str)
     y_code=y.map({name:i for i,name in enumerate(CHAPTER3_TIERS)}).astype(int)
 
     rows=[]
@@ -403,9 +403,9 @@ def _chapter3_fold_transform(x_train,x_test,y_train):
 @st.cache_data(show_spinner='Running stratified 10-fold Objective 3 validation...',max_entries=2)
 def chapter3_validate_models(df):
     r=chapter3_research_scores(df)
-    valid=r.Research_scope & r.Risk_tier_quartile.notna()
+    valid=r.Research_scope & r.Risk_tier_final.notna()
     x=chapter3_candidate_features(df).loc[valid].reset_index(drop=True)
-    y=r.loc[valid,'Risk_tier_quartile'].astype(str).reset_index(drop=True)
+    y=r.loc[valid,'Risk_tier_final'].astype(str).reset_index(drop=True)
 
     if len(y)<40 or y.value_counts().min()<10:
         raise ValueError('Not enough valid cases in every risk tier for stratified 10-fold validation.')
