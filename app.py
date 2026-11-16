@@ -15,14 +15,17 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 st.sidebar.divider()
+st.sidebar.markdown('#### DATASET')
+st.sidebar.caption('Upload or replace the authorized de-identified survey file.')
 upload=st.sidebar.file_uploader(
-    'Survey dataset',
+    'Upload / Replace Dataset',
     type='csv',
     key='survey_dataset_uploader',
     help='Use authorized de-identified CSV only. Public hosting is not suitable for sensitive wellness data.'
 )
 if upload is not None:
     st.session_state['survey_raw']=upload.getvalue()
+    st.session_state['survey_filename']=upload.name
 
 if 'survey_raw' not in st.session_state:
     hero('Student Wellness Intelligence','Analytics, behavioral insights and evidence-informed program planning')
@@ -44,6 +47,17 @@ try:
 except Exception as e:
     st.error(f'Unable to read dataset: {e}')
     st.stop()
+
+dataset_name=st.session_state.get('survey_filename','ADSSU-CWI dataset')
+st.sidebar.markdown(
+    f'''<div class="dataset-status">
+        <div class="dataset-status-label">CURRENT DATASET</div>
+        <div class="dataset-status-name">{dataset_name}</div>
+        <div class="dataset-status-meta">{len(df):,} records loaded</div>
+        <div class="dataset-status-state"><span></span> Ready for analysis</div>
+    </div>''',
+    unsafe_allow_html=True
+)
 
 pages={'Executive Dashboard':overview,'Data Exploration':eda,'Wellness Profile':wellness,'Behavioral Segments':clustering,'Predictive Analytics':prediction,'Intervention Planning':interventions}
 st.sidebar.markdown('#### ANALYTICS WORKSPACE')
