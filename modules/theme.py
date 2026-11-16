@@ -364,6 +364,24 @@ def setup():
         border-width:1px!important;
     }
 
+    /* Sidebar status messages below the dataset uploader */
+    [data-testid="stSidebar"] [data-testid="stAlert"]{
+        background:#E7EEDB!important;
+        border:1px solid #B8C79C!important;
+        box-shadow:0 5px 14px rgba(35,25,18,.06);
+    }
+    [data-testid="stSidebar"] [data-testid="stAlert"] *,
+    [data-testid="stSidebar"] [data-testid="stAlert"] p,
+    [data-testid="stSidebar"] [data-testid="stAlert"] div{
+        color:#4A352B!important;
+        opacity:1!important;
+        font-weight:650!important;
+    }
+    [data-testid="stSidebar"] [data-testid="stAlert"] svg{
+        fill:#6F874D!important;
+        color:#6F874D!important;
+    }
+
     /* Inputs */
     [data-baseweb="select"] > div,
     [data-baseweb="input"] > div{
