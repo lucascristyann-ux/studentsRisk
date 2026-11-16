@@ -36,20 +36,20 @@ def render(df,a):
     st.caption('Unsupervised clustering uses behavioral domains, excluding wellness outcome, safety responses, college, and direct identifiers.')
 
     st.divider()
-    st.markdown('### Chapter 3 · K-Means risk validation')
-    st.caption('The research validation loads automatically. It fixes k=4 and uses the five standardized CRI subscales, as specified in Chapter 3.')
+    st.markdown('### K-Means risk validation')
+    st.caption('The validation loads automatically using k=4 and the five standardized CRI subscales.')
 
     try:
         sil,kappa,profile4,agreement,centroids=chapter3_risk_clusters(df)
     except Exception as e:
-        st.error(f'Chapter 3 k-means validation could not run: {e}')
+        st.error(f'K-Means validation could not run: {e}')
     else:
         c1,c2=st.columns(2)
         c1.metric('Silhouette coefficient',f'{sil:.3f}')
         c2.metric("Cohen's kappa",f'{kappa:.3f}')
 
         if kappa>=.60:
-            st.success("Kappa is at least 0.60, meeting the Chapter 3 substantial-agreement criterion.")
+            st.success("Kappa is at least 0.60, meeting the substantial-agreement criterion.")
         else:
             st.warning("Kappa is below 0.60. The clusters show limited agreement with the final research tiers.")
 
@@ -131,7 +131,7 @@ def render(df,a):
 
 
 # CHAPTER 3 ADDITION: fixed k=4 risk-cluster validation
-@st.cache_data(show_spinner='Running Chapter 3 k-means validation...',max_entries=3)
+@st.cache_data(show_spinner='Running K-Means validation...',max_entries=3)
 def chapter3_risk_clusters(df):
     r=chapter3_research_scores(df)
     cols=['z_PHQ9','z_AUDIT9','z_Food','z_WHO5','z_MSPSS']
