@@ -70,3 +70,50 @@ def chapter3_mspss_score(df):
     filled=mspss.T.fillna(row_median).T
     score=filled.mean(axis=1)
     return score.where(missing<=1)
+
+
+# CHAPTER 3 ADDITION: USDA six-item food-security scoring
+def chapter3_food_security_score(df):
+    """Calculate the USDA six-item food-security raw score from 0 to 6."""
+    text=lambda s:s.astype('string').str.strip()
+    q1=text(df.iloc[:,44]).map({'Often true':1.0,'Sometimes true':1.0,'Never true':0.0})
+    q2=text(df.iloc[:,45]).map({'Often true':1.0,'Sometimes true':1.0,'Never true':0.0})
+    q3=text(df.iloc[:,46]).map({'Yes':1.0,'No':0.0})
+
+    q4=text(df.iloc[:,47]).map({
+        'Almost every month':1.0,
+        'Some months but not every month':1.0,
+        'Only 1 or 2 months':0.0
+    })
+    # If meal cutting/skipping was answered "No", the follow-up frequency is a structural skip.
+    q4=q4.where(q3.ne(0),0.0)
+
+    q5=text(df.iloc[:,48]).map({'Yes':1.0,'No':0.0,'DK':np.nan})
+    q6=text(df.iloc[:,49]).map({'Yes':1.0,'No':0.0})
+
+    items=pd.concat([q1,q2,q3,q4,q5,q6],axis=1)
+    return items.sum(axis=1,min_count=6)
+
+
+# CHAPTER 3 ADDITION: OSAS-adapted 9-item AUDIT scoring
+def chapter3_audit9_score(df):
+    """Calculate the OSAS-adapted 9-item AUDIT raw score for past-year drinkers."""
+    text=lambda s:s.astype('string').str.strip()
+    x=df.iloc[:,102:111].apply(text)
+
+    maps=[
+        {'Never':0,'Monthly or less':1,'2 to 4 times a month':2,'2 to 3 times a week':3,'4 or more times a week':4},
+        {'1 or 2':0,'3 or 4':1,'5 or 6':2,'7, 8, or 9':3,'10  or  more':4,'10 or more':4},
+        {'Never':0,'Less than monhtly':1,'Less than monthly':1,'Monthly':2,'Weekly':3,'Daily or almost daily':4},
+        {'Never':0,'Less than monthly':1,'Monthly':2,'Weekly':3,'Daily or almost daily':4},
+        {'Never':0,'Less than monthly':1,'Monthly':2,'Weekly':3,'Daily or almost daily':4},
+        {'Never':0,'Less than monthly':1,'Monthly':2,'Weekly':3,'Daily of almost daily':4,'Daily or almost daily':4},
+        {'Never':0,'Less than monthly':1,'Monthly':2,'Weekly':3,'Daily of almost daily':4,'Daily or almost daily':4},
+        {'No':0,'Yes, but not in the last year':2,'Yes, during the last year':4},
+        {'No':0,'Yes, but not in the last year':2,'Yes, during the last year':4}
+    ]
+
+    scored=pd.concat([x.iloc[:,i].map(maps[i]) for i in range(9)],axis=1)
+    drinker=text(df.iloc[:,101]).str.casefold().eq('yes')
+    score=scored.sum(axis=1,min_count=9)
+    return score.where(drinker)
