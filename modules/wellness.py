@@ -92,25 +92,37 @@ def render(df,a):
     st.markdown('### Chapter 3 · Statistical analysis')
     st.caption('This section follows the manuscript sequence: Shapiro-Wilk normality checks, then one-way ANOVA or Kruskal-Wallis, followed by Tukey HSD or Dunn-Bonferroni when the omnibus test is significant.')
 
-    if st.button('Run Chapter 3 statistical tests',key='chapter3_stats') or st.session_state.get('chapter3_stats_ready'):
-        st.session_state.chapter3_stats_ready=True
-        try:
-            tests,posthoc=chapter3_statistical_analysis(df)
-        except Exception as e:
-            st.error(f'Chapter 3 statistical analysis could not run: {e}')
+    try:
+        tests,posthoc=chapter3_statistical_analysis(df)
+    except Exception as e:
+        st.error(f'Chapter 3 statistical analysis could not run: {e}')
+    else:
+        significant=tests[tests['Significant_p<.05']].copy()
+        st.metric('Significant omnibus comparisons',f'{len(significant):,}')
+
+        if not significant.empty:
+            significant['Comparison']=significant['Grouping variable']+' · '+significant['Measure']
+            significant['Evidence strength']=-np.log10(significant['p_value'].clip(lower=1e-12))
+            plot=significant.sort_values('Evidence strength',ascending=True)
+            fig=px.bar(
+                plot,x='Evidence strength',y='Comparison',orientation='h',
+                color='Evidence strength',
+                color_continuous_scale=['#DCE6C8','#D9A36D','#C97167'],
+                title='Significant subgroup differences',
+                text='p_value'
+            )
+            fig.update_traces(texttemplate='p=%{text:.4f}',textposition='outside',cliponaxis=False)
+            fig.update_layout(coloraxis_showscale=False)
+            st.plotly_chart(polish(fig,max(380,55*len(plot))),use_container_width=True)
         else:
+            st.info('No omnibus comparison reached p < 0.05.')
+
+        with st.expander('View Chapter 3 statistical test tables'):
             st.dataframe(tests.round(4),hide_index=True,use_container_width=True)
-
-            significant=tests[tests['Significant_p<.05']]
-            st.metric('Significant omnibus comparisons',f'{len(significant):,}')
-
             if posthoc:
-                st.subheader('Post-hoc comparisons for significant tests')
                 for title,table in posthoc.items():
-                    with st.expander(title):
-                        st.dataframe(table,use_container_width=True)
-            else:
-                st.info('No post-hoc table was required because no omnibus comparison reached p < 0.05.')
+                    st.markdown(f'**{title}**')
+                    st.dataframe(table,use_container_width=True)
 
 
 
