@@ -27,7 +27,7 @@ def render(df,a):
 
     # CHAPTER 3 ADDITION: Objective 1 aggregate wellness-risk profile
     st.divider()
-    st.markdown('### Research Objective 1 · Composite wellness profile')
+    st.markdown('### Composite wellness profile')
     r=chapter3_research_scores(df)
     research=r[r.Research_scope & r.CRI.notna()].copy()
 
@@ -86,16 +86,16 @@ def render(df,a):
     cols=['PHQ9_score','WHO5_score','MSPSS_mean','Food_security_score','AUDIT9_score','CRI','CRI_no_AUDIT']
     summary_table=research[cols].describe().T[['count','mean','std','min','25%','50%','75%','max']]
     st.dataframe(summary_table.round(2),use_container_width=True)
-    st.caption('This research section uses the OSAS-adapted 12-item MSPSS on a 1–5 scale and the OSAS-adapted 9-item AUDIT. The base tiers are sample-relative CRI quartiles. Chapter 3 escalation rules are then applied: PHQ-9 item 9 > 0 is at least High Risk, and an Immediate Danger = Yes response is Critical Risk. These are research classifications, not clinical diagnoses or automated referral decisions.')
+    st.caption('This research section uses the OSAS-adapted 12-item MSPSS on a 1–5 scale and the OSAS-adapted 9-item AUDIT. The base tiers are sample-relative CRI quartiles. Escalation rules are then applied: PHQ-9 item 9 > 0 is at least High Risk, and an Immediate Danger = Yes response is Critical Risk. These are research classifications, not clinical diagnoses or automated referral decisions.')
 
     st.divider()
-    st.markdown('### Chapter 3 · Statistical analysis')
+    st.markdown('### Statistical analysis')
     st.caption('This section follows the manuscript sequence: Shapiro-Wilk normality checks, then one-way ANOVA or Kruskal-Wallis, followed by Tukey HSD or Dunn-Bonferroni when the omnibus test is significant.')
 
     try:
         tests,posthoc=chapter3_statistical_analysis(df)
     except Exception as e:
-        st.error(f'Chapter 3 statistical analysis could not run: {e}')
+        st.error(f'Statistical analysis could not run: {e}')
     else:
         significant=tests[tests['Significant_p<.05']].copy()
         st.metric('Significant omnibus comparisons',f'{len(significant):,}')
@@ -117,7 +117,7 @@ def render(df,a):
         else:
             st.info('No omnibus comparison reached p < 0.05.')
 
-        with st.expander('View Chapter 3 statistical test tables'):
+        with st.expander('View statistical test tables'):
             st.dataframe(tests.round(4),hide_index=True,use_container_width=True)
             if posthoc:
                 for title,table in posthoc.items():
@@ -128,7 +128,7 @@ def render(df,a):
 
 
 # CHAPTER 3 ADDITION: statistical analysis specified in the methodology
-@st.cache_data(show_spinner='Running Chapter 3 statistical analysis...',max_entries=3)
+@st.cache_data(show_spinner='Running statistical analysis...',max_entries=3)
 def chapter3_statistical_analysis(df):
     r=chapter3_research_scores(df)
     scope=r.Research_scope.copy()
