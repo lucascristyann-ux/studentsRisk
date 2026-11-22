@@ -2,7 +2,6 @@ import hashlib
 import streamlit as st
 from modules.core import load_data,enrich
 from modules.theme import setup,hero
-from modules.storage import is_configured,load_latest_dataset,save_dataset
 from modules import overview,eda,wellness,clustering,prediction,interventions
 
 st.set_page_config(page_title='ADSSU | Wellness Intelligence',page_icon='✦',layout='wide',initial_sidebar_state='expanded')
@@ -19,25 +18,11 @@ st.sidebar.divider()
 st.sidebar.markdown('#### DATASET')
 st.sidebar.caption('Upload or replace the authorized de-identified survey file.')
 
-# Restore the latest private dataset automatically after a fresh app/session start.
-storage_error=None
-if 'survey_raw' not in st.session_state and is_configured():
-    try:
-        saved=load_latest_dataset()
-    except Exception as e:
-        saved=None
-        storage_error=str(e)
-    if saved:
-        st.session_state['survey_raw']=saved['raw']
-        st.session_state['survey_filename']=saved['filename']
-        st.session_state['survey_source']='Private storage'
-        st.session_state['persistent_object_path']=saved['object_path']
-
 upload=st.sidebar.file_uploader(
     'Upload / Replace Dataset',
     type='csv',
     key='survey_dataset_uploader',
-    help='Use an authorized de-identified CSV. A validated upload is saved to the private OSAS storage bucket.'
+    help='Use an authorized de-identified CSV. The file is used only for the current app session.'
 )
 
 if upload is not None:
@@ -46,7 +31,6 @@ if upload is not None:
     if st.session_state.get('last_seen_upload_fingerprint')!=candidate_fp:
         st.session_state['last_seen_upload_fingerprint']=candidate_fp
         try:
-            # Validate before replacing the active or persistent dataset.
             load_data(candidate)
         except Exception as e:
             st.sidebar.error(f'Dataset not accepted: {e}')
@@ -54,30 +38,11 @@ if upload is not None:
             st.session_state['survey_raw']=candidate
             st.session_state['survey_filename']=upload.name
             st.session_state['survey_source']='Current session'
-            if is_configured():
-                try:
-                    saved=save_dataset(candidate,upload.name)
-                except Exception as e:
-                    st.sidebar.warning('Dataset loaded for this session, but private storage could not save it.')
-                    st.sidebar.error(f'Private storage error: {str(e)[:180]}')
-                    st.session_state['storage_save_error']=str(e)
-                else:
-                    st.session_state['survey_source']='Private storage'
-                    st.session_state['persistent_object_path']=saved['object_path']
-                    st.session_state.pop('storage_save_error',None)
-                    st.sidebar.markdown(
-                        '<div class="storage-success"><span class="storage-success-dot"></span><span>Dataset validated and saved privately.</span></div>',
-                        unsafe_allow_html=True
-                    )
 
 if 'survey_raw' not in st.session_state:
     hero('Student Wellness Intelligence','Analytics, behavioral insights and evidence-informed program planning')
     st.info('Upload an authorized de-identified ADSSU-CWI CSV from the sidebar to begin.')
-    if storage_error:
-        st.warning('Private storage is configured but the saved dataset could not be loaded. Upload a valid CSV to continue.')
-        st.caption(f'Storage error: {storage_error[:220]}')
-    else:
-        st.warning('Use institution-approved access controls before processing sensitive student responses.')
+    st.warning('Use institution-approved access controls before processing sensitive student responses.')
     st.stop()
 
 raw=st.session_state['survey_raw']
@@ -104,10 +69,7 @@ st.sidebar.markdown(
     </div>''',
     unsafe_allow_html=True
 )
-if is_configured():
-    st.sidebar.caption('Private storage is connected. The latest saved dataset loads automatically after app restarts.')
-else:
-    st.sidebar.caption('Private storage is not configured. Uploads remain session-only.')
+st.sidebar.caption('Uploads remain in the current session only and are not saved to external storage.')
 
 pages={'Executive Dashboard':overview,'Data Exploration':eda,'Wellness Profile':wellness,'Behavioral Segments':clustering,'Predictive Analytics':prediction,'Intervention Planning':interventions}
 st.sidebar.markdown('#### ANALYTICS WORKSPACE')
