@@ -34,67 +34,19 @@ def fit_clusters(d):
 def render(df,a):
     st.markdown('### Behavioral pattern discovery')
     st.caption('Unsupervised clustering uses behavioral domains, excluding wellness outcome, safety responses, college, and direct identifiers.')
-
-    st.divider()
-    st.markdown('### K-Means risk validation')
-    st.caption('The validation loads automatically using k=4 and the five standardized CRI subscales.')
-
-    try:
-        sil,kappa,profile4,agreement,centroids=chapter3_risk_clusters(df)
-    except Exception as e:
-        st.error(f'K-Means validation could not run: {e}')
-    else:
-        c1,c2=st.columns(2)
-        c1.metric('Silhouette coefficient',f'{sil:.3f}')
-        c2.metric("Cohen's kappa",f'{kappa:.3f}')
-
-        if kappa>=.60:
-            st.success("Kappa is at least 0.60, meeting the substantial-agreement criterion.")
-        else:
-            st.warning("Kappa is below 0.60. The clusters show limited agreement with the final research tiers.")
-
-        risk_colors={
-            'Low Risk':'#91A66B',
-            'Moderate Risk':'#D8B56A',
-            'High Risk':'#D9915B',
-            'Critical Risk':'#C97167'
-        }
-
-        profile_plot=profile4.reset_index().rename(columns={'KMeans_risk_tier':'Risk tier'})
-        c1,c2=st.columns([1.05,1])
-        with c1:
-            fig=px.bar(
-                profile_plot,x='Risk tier',y='Mean_CRI',
-                color='Risk tier',text='Mean_CRI',
-                title='Mean CRI by K-Means risk profile',
-                category_orders={'Risk tier':CHAPTER3_TIERS},
-                color_discrete_map=risk_colors
-            )
-            fig.update_traces(texttemplate='%{text:.2f}',textposition='outside',cliponaxis=False)
-            st.plotly_chart(polish(fig,430),use_container_width=True)
-
-        with c2:
-            fig=px.imshow(
-                agreement,
-                text_auto=True,
-                aspect='auto',
-                color_continuous_scale=['#F7F1EA','#E7C89A','#C97167'],
-                title='K-Means tier vs final research tier',
-                labels={'x':'K-Means tier','y':'Final research tier','color':'Count'}
-            )
-            st.plotly_chart(polish(fig,430),use_container_width=True)
-
-        with st.expander('View standardized four-cluster profile'):
-            st.dataframe(profile4.round(3),use_container_width=True)
-
-        with st.expander('View cluster centroids and risk-order mapping'):
-            st.dataframe(centroids.round(3),use_container_width=True)
-
-        st.caption('K-Means cluster numbers are arbitrary. Clusters are ordered from lowest to highest centroid risk score before mapping to Low, Moderate, High and Critical for agreement testing.')
-
-    st.divider()
-    st.caption('Supplementary behavioral-clustering routines remain preserved in the source code and are not recomputed automatically on this page.')
-
+    if not st.button('Run clustering',type='primary',key='run_clusters') and 'cluster_ready' not in st.session_state:return
+    st.session_state.cluster_ready=True
+    d=domains(df,reverse=True)
+    q,labels,scatter,profile,ari=fit_clusters(d)
+    st.metric('Cluster stability · mean adjusted Rand index',f'{ari:.3f}')
+    st.plotly_chart(polish(px.line(q,x='k',y='silhouette',markers=True,title='Selecting the number of behavioral segments')),use_container_width=True)
+    st.plotly_chart(polish(px.scatter(scatter,x='PC1',y='PC2',color='Cluster',opacity=.7,title='Student behavioral segments · PCA view')),use_container_width=True)
+    st.plotly_chart(polish(px.imshow(profile,text_auto='.2f',aspect='auto',color_continuous_scale='Teal',title='Behavioral domain profiles')),use_container_width=True)
+    cross=pd.crosstab(a.loc[labels.index,'College'],labels)
+    safe=protected_table(cross,a.College.value_counts())
+    st.subheader('College × cluster (small cells suppressed)')
+    st.dataframe(safe,use_container_width=True)
+    st.caption('Cluster labels are descriptive, not validated risk tiers. Reverse-coding requires expert item-level verification.')
 
 
 # CHAPTER 3 ADDITION: fixed k=4 risk-cluster validation
